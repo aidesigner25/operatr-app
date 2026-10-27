@@ -13,6 +13,7 @@ import {
   HelpCircle,
 } from "lucide-react";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
+import { readOperatorConfig, writeOperatorConfig } from "@/lib/browser/operator-config";
 
 export default function SettingsPage() {
   const [hourlyRate, setHourlyRate] = useState("150");
@@ -30,12 +31,11 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("operatr_user_config");
-      if (stored) {
+      const parsed = readOperatorConfig();
+      if (Object.keys(parsed).length > 0) {
         try {
-          const parsed = JSON.parse(stored);
-          if (parsed.hourlyRate) setHourlyRate(String(parsed.hourlyRate));
-          if (parsed.businessGoal) setBusinessGoals(parsed.businessGoal);
+          if (typeof parsed.hourlyRate === "number" || typeof parsed.hourlyRate === "string") setHourlyRate(String(parsed.hourlyRate));
+          if (typeof parsed.businessGoal === "string") setBusinessGoals(parsed.businessGoal);
         } catch (e) {}
       }
     }
@@ -43,17 +43,14 @@ export default function SettingsPage() {
 
   const handleSave = () => {
     if (typeof window !== "undefined") {
-      const existing = JSON.parse(localStorage.getItem("operatr_user_config") || "{}");
-      localStorage.setItem(
-        "operatr_user_config",
-        JSON.stringify({
-          ...existing,
-          hourlyRate: Number(hourlyRate) || 150,
-          businessGoal: businessGoals,
-          writingSample,
-          behavioralRules,
-        })
-      );
+      const existing = readOperatorConfig();
+      writeOperatorConfig({
+        ...existing,
+        hourlyRate: Number(hourlyRate) || 150,
+        businessGoal: businessGoals,
+        writingSample,
+        behavioralRules,
+      });
     }
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 2500);
