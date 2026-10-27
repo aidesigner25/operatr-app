@@ -1,0 +1,290 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f4f1ea;
+  --foreground: #37342e;
+  --card: #fffdf7;
+  --card-foreground: #37342e;
+  --primary: #37342e;
+  --primary-foreground: #fffdf7;
+  --muted: #ebe5da;
+  --muted-foreground: #777167;
+  --border: #dcd4c7;
+  --radius: 1.25rem;
+  --canvas: #f4f1ea;
+  --paper: #fffdf7;
+  --sand: #ebe5da;
+  --ink: #37342e;
+  --muted-ink: #777167;
+  --line: #dcd4c7;
+  --tan: #9d8967;
+  --tan-light: #d9cdb7;
+  --tan-wash: #eee7da;
+}
+
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.font-display {
+  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+  font-weight: 500;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+.operatr-card-grid {
+  perspective: 1200px;
+}
+
+.capability-grid {
+  background-image: linear-gradient(rgba(87, 80, 69, 0.055) 1px, transparent 1px), linear-gradient(90deg, rgba(87, 80, 69, 0.055) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: linear-gradient(145deg, black, transparent 72%);
+}
+
+.hero-wash {
+  background:
+    radial-gradient(circle at 80% 35%, rgba(192, 177, 149, 0.26), transparent 26rem),
+    radial-gradient(circle at 8% 95%, rgba(211, 202, 184, 0.42), transparent 24rem);
+}
+
+.hero-contrast-field {
+  background-color: var(--ink);
+  background-image:
+    radial-gradient(circle at 18% 22%, rgba(217, 205, 183, 0.22), transparent 13rem),
+    linear-gradient(rgba(249, 247, 240, 0.075) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(249, 247, 240, 0.075) 1px, transparent 1px);
+  background-size: auto, 38px 38px, 38px 38px;
+  box-shadow: 0 30px 100px -55px rgba(61, 55, 45, 0.6);
+}
+
+@media (max-width: 1023px) {
+  .hero-contrast-field {
+    right: -15rem;
+    top: 19rem;
+    width: 36rem;
+    height: 29rem;
+    opacity: 0.78;
+  }
+}
+
+.hero-workspace {
+  transform: translateZ(0);
+}
+
+.auth-input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--canvas);
+  color: var(--ink);
+  padding: 0.72rem 0.85rem;
+  font-size: 0.8rem;
+  outline: none;
+}
+
+.auth-input:focus {
+  border-color: var(--tan);
+  box-shadow: 0 0 0 3px rgba(157, 137, 103, 0.13);
+}
+
+/* Restyle the existing operational pages without rewriting their working UI logic. */
+.operatr-app-shell .bg-white { background-color: var(--paper); }
+.operatr-app-shell .bg-zinc-50 { background-color: var(--canvas); }
+.operatr-app-shell .bg-zinc-100 { background-color: var(--sand); }
+.operatr-app-shell .bg-zinc-200 { background-color: var(--line); }
+.operatr-app-shell .bg-zinc-900 { background-color: var(--ink); }
+.operatr-app-shell .text-white { color: var(--paper); }
+.operatr-app-shell .text-zinc-900,
+.operatr-app-shell .text-zinc-800,
+.operatr-app-shell .text-zinc-700 { color: var(--ink); }
+.operatr-app-shell .text-zinc-600,
+.operatr-app-shell .text-zinc-500,
+.operatr-app-shell .text-zinc-400 { color: var(--muted-ink); }
+.operatr-app-shell .border-zinc-100,
+.operatr-app-shell .border-zinc-200,
+.operatr-app-shell .border-zinc-300 { border-color: var(--line); }
+
+.operatr-app-shell {
+  background-image: radial-gradient(circle at 100% 0%, rgba(192, 177, 149, 0.18), transparent 28rem);
+}
+
+.operatr-app-shell h1,
+.operatr-app-shell h2,
+.operatr-modal h2 {
+  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+  letter-spacing: -0.035em;
+}
+
+.operatr-app-shell input:not([type="checkbox"]),
+.operatr-app-shell textarea,
+.operatr-app-shell select {
+  border-color: var(--line);
+  background-color: var(--canvas);
+  color: var(--ink);
+}
+
+.operatr-app-shell input:focus,
+.operatr-app-shell textarea:focus,
+.operatr-app-shell select:focus {
+  border-color: var(--tan);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(157, 137, 103, 0.11);
+}
+
+.agent-select {
+  border: 1px solid rgba(249, 247, 240, 0.2);
+  border-radius: 0.5rem;
+  background: rgba(255, 253, 247, 0.1);
+  color: var(--paper);
+  padding: 0.38rem 0.55rem;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  outline: none;
+}
+
+.agent-select option {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.dashboard-stats h1 {
+  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+  font-size: 2rem;
+  font-weight: 500;
+  letter-spacing: -0.045em;
+}
+
+.dashboard-stats > div:last-child > div {
+  position: relative;
+  overflow: hidden;
+  border-color: var(--line) !important;
+  background: rgba(255, 253, 247, 0.74) !important;
+  box-shadow: 0 13px 30px -24px rgba(61, 55, 45, 0.32);
+}
+
+.dashboard-stats > div:last-child > div:nth-child(3) {
+  border-color: var(--ink) !important;
+  background-color: var(--ink) !important;
+  background-image: linear-gradient(rgba(249, 247, 240, 0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(249, 247, 240, 0.08) 1px, transparent 1px) !important;
+  background-size: 26px 26px !important;
+}
+
+.dashboard-stats > div:last-child > div:nth-child(3) .text-zinc-900,
+.dashboard-stats > div:last-child > div:nth-child(3) .text-zinc-800,
+.dashboard-stats > div:last-child > div:nth-child(3) .text-zinc-700 {
+  color: var(--paper) !important;
+}
+
+.dashboard-stats > div:last-child > div:nth-child(3) .bg-zinc-900 {
+  background-color: var(--tan-light) !important;
+  color: var(--ink) !important;
+}
+
+.telemetry-chart {
+  position: relative;
+  overflow: hidden;
+  border-color: var(--ink) !important;
+  background-color: var(--ink) !important;
+  background-image: radial-gradient(circle at 78% 6%, rgba(217, 205, 183, 0.17), transparent 12rem), linear-gradient(rgba(249, 247, 240, 0.075) 1px, transparent 1px), linear-gradient(90deg, rgba(249, 247, 240, 0.075) 1px, transparent 1px) !important;
+  background-size: auto, 32px 32px, 32px 32px !important;
+}
+
+.telemetry-chart .text-zinc-900,
+.telemetry-chart .text-zinc-800,
+.telemetry-chart .text-zinc-700 { color: var(--paper) !important; }
+.telemetry-chart .text-zinc-600,
+.telemetry-chart .text-zinc-500,
+.telemetry-chart .text-zinc-400 { color: var(--tan-light) !important; }
+.telemetry-chart .border-zinc-100 { border-color: rgba(249, 247, 240, 0.15) !important; }
+.telemetry-chart .bg-zinc-900,
+.telemetry-chart .bg-zinc-900\/85 { background-color: var(--tan-light) !important; }
+.telemetry-chart .bg-zinc-200,
+.telemetry-chart .bg-zinc-300 { background-color: rgba(249, 247, 240, 0.28) !important; }
+.telemetry-chart .text-white { color: var(--ink) !important; }
+
+.telemetry-approvals {
+  background: linear-gradient(145deg, rgba(255,253,247,0.98), rgba(235,229,218,0.65)) !important;
+}
+
+.operatr-modal .bg-white { background-color: var(--paper); }
+.operatr-modal .bg-zinc-50,
+.operatr-modal .bg-zinc-100 { background-color: var(--canvas); }
+.operatr-modal .bg-zinc-900 { background-color: var(--ink); }
+.operatr-modal .text-white { color: var(--paper); }
+.operatr-modal .text-zinc-900,
+.operatr-modal .text-zinc-800,
+.operatr-modal .text-zinc-700 { color: var(--ink); }
+.operatr-modal .text-zinc-600,
+.operatr-modal .text-zinc-500,
+.operatr-modal .text-zinc-400 { color: var(--muted-ink); }
+.operatr-modal .border-zinc-100,
+.operatr-modal .border-zinc-200,
+.operatr-modal .border-zinc-300 { border-color: var(--line); }
+
+.operatr-capability-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+/* Custom Soft Elevated Shadows matching Reference 2 */
+.shadow-soft {
+  box-shadow: 0 10px 30px -5px rgba(67, 60, 49, 0.08), 0 4px 12px -2px rgba(67, 60, 49, 0.03);
+}
+
+.shadow-soft-lg {
+  box-shadow: 0 20px 40px -10px rgba(67, 60, 49, 0.12), 0 8px 16px -4px rgba(67, 60, 49, 0.04);
+}
+
+.shadow-pill {
+  box-shadow: 0 6px 20px -2px rgba(0, 0, 0, 0.08);
+}
+
+/* Halftone particle dot grid */
+.bg-halftone {
+  background-image: radial-gradient(#d4d4d8 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Infinite marquee animation */
+@keyframes marquee {
+  0% { transform: translateX(0%); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-marquee {
+  display: flex;
+  width: max-content;
+  animation: marquee 48s linear infinite;
+}
+
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
