@@ -91,15 +91,13 @@ export function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingProps
   const handleEnterDashboard = () => {
     onComplete({
       skipped: false,
-      hasActiveKeys: true,
+      hasActiveKeys: false,
+      needsSecureConnection: true,
       primaryProvider,
       primaryModel,
-      primaryKey,
       fallbackProvider: enableFallback ? fallbackProvider : null,
       fallbackModel: enableFallback ? fallbackModel : null,
-      apifyKey,
-      tavilyKey,
-      googleConnected,
+      googleConnected: false,
       businessGoal: businessGoal || "Building high-leverage business intelligence systems.",
       hourlyRate: Number(hourlyRate) || 150,
     });
@@ -260,9 +258,10 @@ export function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingProps
                 </label>
                 <input
                   type="password"
-                  placeholder="sk-..."
+                  placeholder="Secure server vault arrives in Phase 1"
                   value={primaryKey}
                   onChange={(e) => setPrimaryKey(e.target.value)}
+                  disabled
                   className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 text-xs font-mono text-zinc-900 bg-white focus:outline-none focus:border-zinc-900"
                 />
                 <p className="text-[10px] text-zinc-400 mt-1">
@@ -320,9 +319,10 @@ export function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingProps
                     </label>
                     <input
                       type="password"
-                      placeholder="sk-..."
+                      placeholder="Secure server vault arrives in Phase 1"
                       value={fallbackKey}
                       onChange={(e) => setFallbackKey(e.target.value)}
+                      disabled
                       className="w-full px-3 py-2 rounded-xl border border-zinc-200 text-xs font-mono bg-white"
                     />
                   </div>
@@ -383,9 +383,10 @@ export function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingProps
                 </div>
                 <input
                   type="password"
-                  placeholder="apify_api_..."
+                  placeholder="Secure server vault arrives in Phase 1"
                   value={apifyKey}
                   onChange={(e) => setApifyKey(e.target.value)}
+                  disabled
                   className="w-full px-3 py-2 rounded-xl border border-zinc-200 text-xs font-mono bg-white"
                 />
                 <p className="text-[10px] text-zinc-400">
@@ -408,9 +409,10 @@ export function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingProps
                 </div>
                 <input
                   type="password"
-                  placeholder="tvly-..."
+                  placeholder="Secure server vault arrives in Phase 1"
                   value={tavilyKey}
                   onChange={(e) => setTavilyKey(e.target.value)}
+                  disabled
                   className="w-full px-3 py-2 rounded-xl border border-zinc-200 text-xs font-mono bg-white"
                 />
               </div>
@@ -431,6 +433,7 @@ export function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingProps
                 <button
                   type="button"
                   onClick={() => setGoogleConnected(!googleConnected)}
+                  disabled
                   className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
                     googleConnected
                       ? "bg-emerald-600 text-white flex items-center gap-1"
