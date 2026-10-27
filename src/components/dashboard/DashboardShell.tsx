@@ -18,6 +18,7 @@ import {
   Menu,
   X,
 } from "lucide-react";
+import { readOperatorConfig } from "@/lib/browser/operator-config";
 
 interface DashboardShellProps {
   children: React.ReactNode;
@@ -46,10 +47,9 @@ export function DashboardShell({ children }: DashboardShellProps) {
         router.replace("/auth?mode=signin");
         return;
       }
-      const stored = localStorage.getItem("operatr_user_config");
-      if (stored) {
+      const parsed = readOperatorConfig();
+      if (Object.keys(parsed).length > 0) {
         try {
-          const parsed = JSON.parse(stored);
           setUserConfig(parsed);
           if (parsed.hourlyRate) setHourlyRate(String(parsed.hourlyRate));
         } catch (e) {
