@@ -4,7 +4,7 @@ Operatr is a private BYOK agent workspace for strategic research and operational
 
 ## Current boundary
 
-The current front end is a Next.js application with prototype views for authentication, onboarding, provider selection, integrations, dashboard telemetry, and the agent workspace. Until Phase 1, it makes no live provider or tool calls.
+The current front end is a Next.js application with Supabase email/password authentication, protected workspace routes, a preference-only onboarding flow, and an encrypted BYOK vault. It makes no live provider or tool calls.
 
 ```text
 Browser UI -> authenticated Next.js route handler -> server runtime -> approved provider or tool
@@ -20,10 +20,19 @@ The browser must never call an LLM, Tavily, Apify, or Google API with a user cre
 - `src/lib/browser/**`: explicitly non-sensitive browser preferences only.
 - `src/lib/**`: shared, credential-free utilities.
 
+## Phase 1 identity and vault
+
+- `src/proxy.ts` protects workspace and vault routes. It verifies the Supabase access token and renews it with a refresh token when needed.
+- Supabase session tokens are held in `HttpOnly`, `SameSite=Lax` cookies. Prototype browser-auth markers are removed on the auth screen.
+- The browser can only submit a credential to `/api/vault/credentials/[provider]`. The route validates its shape, authenticates the owner, encrypts it with AES-256-GCM, then writes the ciphertext using that user's Supabase JWT.
+- The encryption AAD includes the user ID and provider. A credential cannot be replayed under another owner or provider without failing decryption.
+- Vault status routes return provider metadata and the final four characters only—never a credential value or ciphertext.
+- `supabase/migrations/202610280001_phase1_identity_vault.sql` creates profiles, vault tables, audit metadata, and owner-only RLS policies.
+
 ## Implementation order
 
 1. Foundation: conventions, environment template, feature flags, quality checks, and browser-key removal.
-2. Identity and vault: Supabase Auth, middleware, RLS, and encrypted credential storage.
+2. Identity and vault: Supabase Auth, middleware, RLS, and encrypted credential storage. **Complete in code; environment and migration setup required.**
 3. Chat: provider-neutral streaming chat, persisted conversations, and the four supported LLM providers.
 4. Operatr runtime: response modes, model policy, safe retry/fallback behavior, and execution telemetry.
 5. Tools: Tavily, a constrained Apify allowlist, then Google OAuth integrations.

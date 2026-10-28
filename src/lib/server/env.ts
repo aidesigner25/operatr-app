@@ -31,7 +31,6 @@ export function assertSupabaseServerConfiguration(): void {
   const missing = [
     ["NEXT_PUBLIC_SUPABASE_URL", environment.supabase.url],
     ["NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", environment.supabase.publishableKey],
-    ["SUPABASE_SERVICE_ROLE_KEY", environment.supabase.serviceRoleKey],
   ].filter(([, value]) => !value).map(([name]) => name);
   if (missing.length > 0) throw new Error(`Supabase server configuration is incomplete: ${missing.join(", ")}`);
 }

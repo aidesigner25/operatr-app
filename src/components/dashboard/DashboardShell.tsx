@@ -19,6 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { readOperatorConfig } from "@/lib/browser/operator-config";
+import { signOut } from "@/lib/browser/auth";
 
 interface DashboardShellProps {
   children: React.ReactNode;
@@ -39,14 +40,10 @@ export function DashboardShell({ children }: DashboardShellProps) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [hourlyRate, setHourlyRate] = useState("150");
   const [userConfig, setUserConfig] = useState<any>(null);
-  const [isCheckingAccess, setIsCheckingAccess] = useState(true);
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      if (localStorage.getItem("operatr_authenticated") !== "true") {
-        router.replace("/auth?mode=signin");
-        return;
-      }
       const parsed = readOperatorConfig();
       if (Object.keys(parsed).length > 0) {
         try {
@@ -56,13 +53,15 @@ export function DashboardShell({ children }: DashboardShellProps) {
           // ignore
         }
       }
-      setIsCheckingAccess(false);
     }
-  }, [router]);
+  }, []);
 
-  if (isCheckingAccess) {
-    return <div className="min-h-screen bg-[var(--canvas)]" />;
-  }
+  const handleSignOut = async () => {
+    setIsSigningOut(true);
+    await signOut();
+    router.replace("/");
+    router.refresh();
+  };
 
   return (
     <div className="operatr-app-shell min-h-screen bg-[var(--canvas)] text-[var(--ink)] flex font-sans">
@@ -129,14 +128,15 @@ export function DashboardShell({ children }: DashboardShellProps) {
             </div>
           </div>
 
-          <Link
-            href="/"
+          <button
+            type="button"
             title="Exit to Landing"
-            onClick={() => localStorage.removeItem("operatr_authenticated")}
-            className="p-2 text-[var(--muted-ink)] hover:text-[var(--ink)] rounded-full hover:bg-[var(--sand)] transition-colors"
+            onClick={handleSignOut}
+            disabled={isSigningOut}
+            className="p-2 text-[var(--muted-ink)] hover:text-[var(--ink)] rounded-full hover:bg-[var(--sand)] transition-colors disabled:opacity-50"
           >
             <LogOut className="w-4 h-4" />
-          </Link>
+          </button>
         </div>
       </aside>
 

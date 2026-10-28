@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   User,
   Shield,
@@ -18,17 +18,28 @@ export default function ProfilePage() {
   const [organization, setOrganization] = useState("Autonomous Intelligence Labs");
   const [wipeConfirm, setWipeConfirm] = useState(false);
   const [wipeSuccess, setWipeSuccess] = useState(false);
+  const [wipeError, setWipeError] = useState("");
 
-  const handleWipeCredentials = () => {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("operatr_user_config");
+  useEffect(() => {
+    void (async () => {
+      const response = await fetch("/api/auth/session", { cache: "no-store" });
+      const payload = await response.json().catch(() => null) as { data?: { user?: { email?: string; displayName?: string } } } | null;
+      if (response.ok && payload?.data?.user) {
+        setEmail(payload.data.user.email || "");
+        setName(typeof payload.data.user.displayName === "string" ? payload.data.user.displayName : "Operator");
+      }
+    })();
+  }, []);
+
+  const handleWipeCredentials = async () => {
+    setWipeError("");
+    const response = await fetch("/api/vault/credentials", { method: "DELETE" });
+    if (!response.ok) {
+      setWipeError("Credentials could not be removed. Please try again.");
+      return;
     }
     setWipeSuccess(true);
     setWipeConfirm(false);
-    setTimeout(() => {
-      setWipeSuccess(false);
-      window.location.href = "/";
-    }, 2000);
   };
 
   return (
@@ -127,13 +138,13 @@ export default function ProfilePage() {
           </div>
 
           <p className="text-xs text-red-800 leading-relaxed">
-            Immediately delete all stored API keys (OpenAI, Anthropic, Gemini, xAI, Tavily, Apify) and disconnect Google Suite OAuth tokens. This leaves zero residue on the system.
+            Immediately remove all encrypted API-key records from your private vault. Google Workspace OAuth is not connected in this phase.
           </p>
 
           {wipeSuccess ? (
             <div className="p-3 rounded-2xl bg-emerald-100 text-emerald-900 text-xs font-semibold flex items-center gap-2">
               <Check className="w-4 h-4" />
-              <span>All credentials securely erased. Redirecting...</span>
+              <span>All encrypted credential records have been erased.</span>
             </div>
           ) : wipeConfirm ? (
             <div className="flex items-center gap-3">
@@ -159,6 +170,7 @@ export default function ProfilePage() {
               <span>Purge All Stored Keys</span>
             </button>
           )}
+          {wipeError && <p className="text-xs font-medium text-red-800">{wipeError}</p>}
         </div>
       </div>
     </DashboardShell>
