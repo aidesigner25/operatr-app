@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const PROTECTED_PREFIXES = ["/welcome", "/dashboard", "/agent", "/integrations", "/settings", "/profile", "/api/vault"];
+const PROTECTED_PREFIXES = ["/welcome", "/dashboard", "/agent", "/integrations", "/settings", "/profile", "/api/vault", "/api/chat"];
 const PROTECTED_PATHS = ["/api"];
 const ACCESS_TOKEN_COOKIE = "operatr-access-token";
 const REFRESH_TOKEN_COOKIE = "operatr-refresh-token";
@@ -77,5 +77,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/api", "/welcome/:path*", "/dashboard/:path*", "/agent/:path*", "/integrations/:path*", "/settings/:path*", "/profile/:path*", "/api/vault/:path*"],
+  matcher: ["/api", "/welcome/:path*", "/dashboard/:path*", "/agent/:path*", "/integrations/:path*", "/settings/:path*", "/profile/:path*", "/api/vault/:path*", "/api/chat/:path*"],
 };

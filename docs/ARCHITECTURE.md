@@ -4,7 +4,7 @@ Operatr is a private BYOK agent workspace for strategic research and operational
 
 ## Current boundary
 
-The current front end is a Next.js application with Supabase email/password authentication, protected workspace routes, a preference-only onboarding flow, and an encrypted BYOK vault. It makes no live provider or tool calls.
+The current front end is a Next.js application with Supabase email/password authentication, protected workspace routes, a preference-only onboarding flow, an encrypted BYOK vault, and a server-side streaming chat runtime. Chat remains disabled until explicitly enabled with a server environment flag; no tools or OAuth integrations are live.
 
 ```text
 Browser UI -> authenticated Next.js route handler -> server runtime -> approved provider or tool
@@ -29,11 +29,21 @@ The browser must never call an LLM, Tavily, Apify, or Google API with a user cre
 - Vault status routes return provider metadata and the final four characters only—never a credential value or ciphertext.
 - `supabase/migrations/202610280001_phase1_identity_vault.sql` creates profiles, vault tables, audit metadata, and owner-only RLS policies.
 
+## Phase 2 chat runtime
+
+- `supabase/migrations/202610280002_phase2_chat_runtime.sql` creates owner-scoped conversations and messages with RLS policies that also verify a message belongs to an owned conversation.
+- `/api/chat/**` is protected both by the route proxy and by server-side Supabase session verification.
+- A chat request decrypts only the signed-in user's selected provider credential in server memory. Browser responses contain conversation data and streamed model text, never the credential or ciphertext.
+- After the first completed exchange, the selected model generates a 3–6 word subject label from the opening message. It is best-effort and cannot interrupt a chat; users can still rename only their own conversations through the protected conversation endpoint.
+- The dashboard composer and Agent workspace use the same persisted conversation API; the dashboard does not simulate tools, task runs, or value calculations.
+- OpenAI, Anthropic, Google Gemini, and xAI run behind a common streaming interface. Provider fallback, tools, file uploads, model discovery, and background agents are not part of this phase.
+- `OPERATR_ENABLE_CHAT` remains `false` by default. It must be deliberately enabled only after the migration and a provider smoke test.
+
 ## Implementation order
 
 1. Foundation: conventions, environment template, feature flags, quality checks, and browser-key removal.
 2. Identity and vault: Supabase Auth, middleware, RLS, and encrypted credential storage. **Complete in code; environment and migration setup required.**
-3. Chat: provider-neutral streaming chat, persisted conversations, and the four supported LLM providers.
+3. Chat: provider-neutral streaming chat, persisted conversations, and the four supported LLM providers. **Complete in code; migration and explicit feature enablement required.**
 4. Operatr runtime: response modes, model policy, safe retry/fallback behavior, and execution telemetry.
 5. Tools: Tavily, a constrained Apify allowlist, then Google OAuth integrations.
 

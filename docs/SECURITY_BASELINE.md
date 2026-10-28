@@ -25,6 +25,10 @@ This is a private POC rather than a public enterprise service. The goal is propo
 - Ciphertext is bound as additional authenticated data to the Supabase user ID and provider name.
 - Database calls carry the authenticated user JWT rather than a service-role key, so RLS applies to normal application reads and writes.
 - The current rate limit is intentionally process-local. Replace it with a shared limiter before deploying more than one application instance.
+- Chat conversation and message tables use user-scoped RLS. A message insertion must also reference a conversation owned by the same authenticated user.
+- The chat route decrypts the selected provider credential only after session and conversation ownership checks. It does not log, return, or persist plaintext credentials.
+- Cross-provider fallback remains absent. A chat request is sent only to the provider selected by the user for that conversation.
+- Assistant Markdown is rendered without raw HTML support. Model output can format content but cannot inject executable markup into the chat UI.
 
 ## Deliberately deferred
 
