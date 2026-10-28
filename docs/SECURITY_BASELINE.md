@@ -1,4 +1,4 @@
-# Security baseline — Phase 0
+# Security baseline — Phase 1
 
 This is a private POC rather than a public enterprise service. The goal is proportionate controls: protect credentials and private data from the start without premature infrastructure.
 
@@ -12,10 +12,19 @@ This is a private POC rather than a public enterprise service. The goal is propo
 
 ## Required before live credentials
 
-- Supabase Auth, route middleware, and RLS policies/tests for every user-owned table.
-- Application-level authenticated encryption with a versioned server-only secret.
-- Request validation, rate limits, and audit metadata for credential and chat endpoints.
+- Supabase Auth, protected-route proxy, and RLS policies for every current user-owned table.
+- Application-level authenticated encryption with a versioned server-only AES-256 secret.
+- Request validation, process-local POC rate limits, and audit metadata for credential endpoints.
 - Safe provider status responses that never return raw credentials.
+
+## Phase 1 controls
+
+- Authenticated session tokens use `HttpOnly` cookies; they are not persisted in localStorage.
+- The credential API accepts only an allowlist of providers, validates a bounded input, and never logs or returns the input.
+- Each vault write uses AES-256-GCM with a 32-byte server-only key. The payload includes an encryption version and key ID to permit planned rotation.
+- Ciphertext is bound as additional authenticated data to the Supabase user ID and provider name.
+- Database calls carry the authenticated user JWT rather than a service-role key, so RLS applies to normal application reads and writes.
+- The current rate limit is intentionally process-local. Replace it with a shared limiter before deploying more than one application instance.
 
 ## Deliberately deferred
 
@@ -26,3 +35,5 @@ This is a private POC rather than a public enterprise service. The goal is propo
 ## Release check
 
 Before private live-user access, verify that no API key can be found in browser storage, page source, logs, Git history, or health responses. Confirm protected routes reject unauthenticated access and cross-user Supabase reads/writes.
+
+Apply the migration and use the checklist in [Phase 1 setup](./PHASE_1_SETUP.md) before testing real keys.

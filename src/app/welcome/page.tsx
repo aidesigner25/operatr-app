@@ -4,15 +4,11 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, KeyRound, LayoutDashboard } from "lucide-react";
 import { OnboardingModal } from "@/components/onboarding/OnboardingModal";
 import { writeOperatorConfig } from "@/lib/browser/operator-config";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 export default function WelcomePage() {
   const router = useRouter();
   const [onboardingOpen, setOnboardingOpen] = useState(false);
-
-  useEffect(() => {
-    if (localStorage.getItem("operatr_authenticated") !== "true") router.replace("/auth");
-  }, [router]);
 
   const explore = () => {
     writeOperatorConfig({ skipped: true, hasActiveKeys: false, hourlyRate: 150, businessGoal: "General business research and competitor surveillance." });

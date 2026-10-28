@@ -33,15 +33,10 @@ export function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingProps
   // Onboarding Form State
   const [primaryProvider, setPrimaryProvider] = useState<"openai" | "anthropic" | "google" | "xai">("openai");
   const [primaryModel, setPrimaryModel] = useState("gpt-4o");
-  const [primaryKey, setPrimaryKey] = useState("");
 
   const [enableFallback, setEnableFallback] = useState(false);
   const [fallbackProvider, setFallbackProvider] = useState<"openai" | "anthropic" | "google" | "xai">("anthropic");
   const [fallbackModel, setFallbackModel] = useState("claude-3-5-sonnet-20241022");
-  const [fallbackKey, setFallbackKey] = useState("");
-
-  const [apifyKey, setApifyKey] = useState("");
-  const [tavilyKey, setTavilyKey] = useState("");
   const [googleConnected, setGoogleConnected] = useState(false);
 
   const [businessGoal, setBusinessGoal] = useState("");
@@ -254,19 +249,9 @@ export function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingProps
 
               <div>
                 <label className="text-xs font-semibold text-zinc-700 block mb-1">
-                  {primaryProvider.toUpperCase()} API Key
+                  Secure connection
                 </label>
-                <input
-                  type="password"
-                  placeholder="Secure server vault arrives in Phase 1"
-                  value={primaryKey}
-                  onChange={(e) => setPrimaryKey(e.target.value)}
-                  disabled
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 text-xs font-mono text-zinc-900 bg-white focus:outline-none focus:border-zinc-900"
-                />
-                <p className="text-[10px] text-zinc-400 mt-1">
-                  Encrypted at rest using AES-256. Never exposed to third parties.
-                </p>
+                <p className="rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[10px] leading-relaxed text-zinc-500">Add the {primaryProvider.toUpperCase()} key from Integrations after onboarding. The encrypted vault never keeps a key in browser storage.</p>
               </div>
             </div>
 
@@ -314,17 +299,7 @@ export function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingProps
                     </select>
                   </div>
                   <div>
-                    <label className="text-[10px] font-mono text-zinc-500 uppercase block mb-1">
-                      Fallback API Key
-                    </label>
-                    <input
-                      type="password"
-                      placeholder="Secure server vault arrives in Phase 1"
-                      value={fallbackKey}
-                      onChange={(e) => setFallbackKey(e.target.value)}
-                      disabled
-                      className="w-full px-3 py-2 rounded-xl border border-zinc-200 text-xs font-mono bg-white"
-                    />
+                    <p className="text-[10px] leading-relaxed text-zinc-500">Connection is configured after onboarding in the secure vault. Cross-provider fallback stays off until you opt in during the runtime phase.</p>
                   </div>
                 </div>
               )}
@@ -363,7 +338,7 @@ export function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingProps
                 Connect External Data Tools
               </h2>
               <p className="text-xs text-zinc-500 mt-1">
-                These tools allow Operatr to autonomously search the web, scrape platforms, and generate deliverables.
+                Select the tools you may connect later. Live web, scraping, and document actions remain disabled in this phase.
               </p>
             </div>
 
@@ -381,14 +356,7 @@ export function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingProps
                     Free accounts supported
                   </span>
                 </div>
-                <input
-                  type="password"
-                  placeholder="Secure server vault arrives in Phase 1"
-                  value={apifyKey}
-                  onChange={(e) => setApifyKey(e.target.value)}
-                  disabled
-                  className="w-full px-3 py-2 rounded-xl border border-zinc-200 text-xs font-mono bg-white"
-                />
+                <p className="text-[10px] text-zinc-400">Add this token later from Integrations. Operatr will not run an Apify actor in Phase 1.</p>
                 <p className="text-[10px] text-zinc-400">
                   Note: Free Apify tier covers several initial crawls per month before rate limits apply.
                 </p>
@@ -407,14 +375,7 @@ export function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingProps
                     Free accounts supported
                   </span>
                 </div>
-                <input
-                  type="password"
-                  placeholder="Secure server vault arrives in Phase 1"
-                  value={tavilyKey}
-                  onChange={(e) => setTavilyKey(e.target.value)}
-                  disabled
-                  className="w-full px-3 py-2 rounded-xl border border-zinc-200 text-xs font-mono bg-white"
-                />
+                <p className="text-[10px] text-zinc-400">Add this key later from Integrations. Search requests stay disabled in Phase 1.</p>
               </div>
 
               {/* Google Suite Connection */}
