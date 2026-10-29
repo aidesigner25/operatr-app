@@ -13,7 +13,6 @@ import {
   HelpCircle,
 } from "lucide-react";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
-import { readOperatorConfig, writeOperatorConfig } from "@/lib/browser/operator-config";
 
 export default function SettingsPage() {
   const [hourlyRate, setHourlyRate] = useState("150");
@@ -28,32 +27,39 @@ export default function SettingsPage() {
   );
 
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const parsed = readOperatorConfig();
-      if (Object.keys(parsed).length > 0) {
-        try {
-          if (typeof parsed.hourlyRate === "number" || typeof parsed.hourlyRate === "string") setHourlyRate(String(parsed.hourlyRate));
-          if (typeof parsed.businessGoal === "string") setBusinessGoals(parsed.businessGoal);
-        } catch (e) {}
-      }
-    }
+    void (async () => {
+      const response = await fetch("/api/profile", { cache: "no-store" });
+      const payload = await response.json().catch(() => ({})) as { data?: { profile?: { hourlyRate?: number; businessGoals?: string; writingSample?: string; agentInstructions?: string } }; error?: { message?: string } };
+      const profile = payload.data?.profile;
+      if (!response.ok || !profile) { setError(payload.error?.message || "Settings could not be loaded."); return; }
+      setHourlyRate(String(profile.hourlyRate ?? 150));
+      setBusinessGoals(profile.businessGoals || "");
+      setWritingSample(profile.writingSample || "");
+      setBehavioralRules(profile.agentInstructions || "");
+    })();
   }, []);
 
-  const handleSave = () => {
-    if (typeof window !== "undefined") {
-      const existing = readOperatorConfig();
-      writeOperatorConfig({
-        ...existing,
-        hourlyRate: Number(hourlyRate) || 150,
-        businessGoal: businessGoals,
-        writingSample,
-        behavioralRules,
-      });
+  const handleSave = async () => {
+    setSaving(true);
+    setSavedSuccess(false);
+    setError("");
+    const response = await fetch("/api/profile", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hourlyRate: Number(hourlyRate), businessGoals, writingSample, agentInstructions: behavioralRules }),
+    });
+    const payload = await response.json().catch(() => ({})) as { data?: { profile?: unknown }; error?: { message?: string } };
+    if (!response.ok || !payload.data?.profile) setError(payload.error?.message || "Settings could not be saved.");
+    else {
+      setSavedSuccess(true);
+      window.dispatchEvent(new CustomEvent("operatr:profile-updated", { detail: payload.data.profile }));
+      window.setTimeout(() => setSavedSuccess(false), 2500);
     }
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 2500);
+    setSaving(false);
   };
 
   return (
@@ -71,8 +77,9 @@ export default function SettingsPage() {
           </div>
 
           <button
-            onClick={handleSave}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-zinc-900 text-white text-xs font-semibold hover:bg-zinc-800 shadow-sm transition-all"
+            onClick={() => void handleSave()}
+            disabled={saving}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-zinc-900 text-white text-xs font-semibold hover:bg-zinc-800 shadow-sm transition-all disabled:opacity-60"
           >
             {savedSuccess ? (
               <>
@@ -82,11 +89,13 @@ export default function SettingsPage() {
             ) : (
               <>
                 <Save className="w-3.5 h-3.5" />
-                <span>Save Changes</span>
+                <span>{saving ? "Saving…" : "Save Changes"}</span>
               </>
             )}
           </button>
         </div>
+
+        {error && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-800">{error}</div>}
 
         {/* Section 1: Financial Telemetry */}
         <div className="p-6 rounded-3xl bg-white border border-zinc-200/90 shadow-soft space-y-4">

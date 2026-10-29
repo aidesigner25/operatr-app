@@ -1,492 +1,62 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import {
-  Clock,
-  DollarSign,
-  TrendingUp,
-  FileText,
-  AlertTriangle,
-  CheckCircle2,
-  ArrowUpRight,
-  Sparkles,
-  ExternalLink,
-  ChevronRight,
-  Filter,
-  Download,
-  MoreVertical,
-  ShieldAlert,
-} from "lucide-react";
+import { ArrowUpRight, CheckCircle2, Clock3, DollarSign, FileText, MoreHorizontal, Sparkles, TrendingUp } from "lucide-react";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { DashboardChat } from "@/components/dashboard/DashboardChat";
 
-interface TaskRun {
-  id: string;
-  title: string;
-  tool: string;
-  status: "Completed" | "Pending Approval" | "Running";
-  hoursSaved: number;
-  value: number;
-  date: string;
-  artifactUrl?: string;
-}
+const telemetry = [
+  { month: "May", value: 540, hours: 3.6 }, { month: "Jun", value: 780, hours: 5.2 }, { month: "Jul", value: 1035, hours: 6.9 },
+  { month: "Aug", value: 1420, hours: 9.5 }, { month: "Sep", value: 1095, hours: 7.3 }, { month: "Oct", value: 1520, hours: 10.1 }, { month: "Nov", value: 885, hours: 5.9 },
+];
+
+const recentRuns = [
+  { title: "Fintech pricing surveillance", kind: "Research brief", hours: "2.8h", value: "$420", state: "Complete" },
+  { title: "Buyer-signal qualification", kind: "Signal analysis", hours: "3.4h", value: "$510", state: "Ready" },
+  { title: "Creator affinity scan", kind: "Strategy memo", hours: "1.9h", value: "$285", state: "Complete" },
+];
 
 export default function DashboardPage() {
   const [hourlyRate, setHourlyRate] = useState(150);
-  const [userConfig, setUserConfig] = useState<any>(null);
-
-  // Live Telemetry Totals
-  const [totalHoursSaved, setTotalHoursSaved] = useState(48.5);
-  const [totalValue, setTotalValue] = useState(7275);
-  const [tasksCount, setTasksCount] = useState(42);
-
-  // Active View Tab in Bottom Section
-  const [activeTab, setActiveTab] = useState<"chat" | "table">("chat");
-
-  // Initial Runs Data (Reference 2 Manage Jobs Table)
-  const [runs, setRuns] = useState<TaskRun[]>([
-    {
-      id: "run-101",
-      title: "Fintech Pricing Surveillance (Stripe, Adyen, Checkout)",
-      tool: "Apify Crawler + Sheets",
-      status: "Completed",
-      hoursSaved: 2.8,
-      value: 420,
-      date: "Today, 10:45 AM",
-      artifactUrl: "https://docs.google.com/spreadsheets",
-    },
-    {
-      id: "run-102",
-      title: "X/Twitter High-Intent Buyer Signals for AI Dev Tools",
-      tool: "X Actor + Tavily",
-      status: "Pending Approval",
-      hoursSaved: 3.4,
-      value: 510,
-      date: "Today, 08:30 AM",
-    },
-    {
-      id: "run-103",
-      title: "B2B SaaS Creator Affinity Brief (8 Creators)",
-      tool: "Tavily + Google Docs",
-      status: "Completed",
-      hoursSaved: 1.9,
-      value: 285,
-      date: "Yesterday",
-      artifactUrl: "https://docs.google.com/document",
-    },
-    {
-      id: "run-104",
-      title: "Competitor Career Page Crawl: AI Engineering Hires",
-      tool: "Apify Web Actor",
-      status: "Completed",
-      hoursSaved: 2.1,
-      value: 315,
-      date: "2 days ago",
-    },
-  ]);
+  const [activeTab, setActiveTab] = useState<"chat" | "runs">("chat");
+  const hours = 48.5;
+  const totalValue = Math.round(hours * hourlyRate);
+  const maxValue = 1600;
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("operatr_user_config");
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored);
-          setUserConfig(parsed);
-          if (parsed.hourlyRate) {
-            setHourlyRate(Number(parsed.hourlyRate));
-            setTotalValue(Number(parsed.hourlyRate) * 48.5);
-          }
-        } catch (e) {
-          // ignore
-        }
-      }
-    }
+    void (async () => {
+      const response = await fetch("/api/profile", { cache: "no-store" });
+      const payload = await response.json().catch(() => ({})) as { data?: { profile?: { hourlyRate?: number } } };
+      if (response.ok && payload.data?.profile?.hourlyRate !== undefined) setHourlyRate(payload.data.profile.hourlyRate);
+    })();
   }, []);
 
-  return (
-    <DashboardShell>
-      {/* Notice Banner if Onboarding was skipped */}
-      {userConfig?.skipped && (
-        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2">
-            <ShieldAlert className="w-4 h-4 text-amber-700" />
-            <span>
-              <strong>Exploration Mode:</strong> You skipped onboarding. Add your API keys in Integrations to enable live agent runs.
-            </span>
-          </div>
-          <Link
-            href="/integrations"
-            className="px-3.5 py-1.5 rounded-xl bg-amber-900 text-white font-medium hover:bg-amber-800 transition-colors"
-          >
-            Configure Keys
-          </Link>
-        </div>
-      )}
-
-      {/* TOP SECTION: QUICK STATS (6 TALL ROUNDED CARDS - DIRECT REFERENCE 2 REPLICA) */}
-      <section className="dashboard-stats order-2 space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold tracking-tight text-zinc-900">
-              Quick Stats
-            </h1>
-            <p className="text-xs text-zinc-500">
-              Your operational telemetry and capital return.
-            </p>
-          </div>
-          <div className="flex items-center gap-2 text-xs font-mono text-zinc-500 bg-white px-3 py-1.5 rounded-full border border-zinc-200 shadow-sm">
-            <span>Rate: ${hourlyRate}/hr</span>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          {/* Card 1: Total Hours Reclaimed */}
-          <div className="p-5 rounded-3xl bg-white border border-zinc-200/90 shadow-soft flex flex-col justify-between hover:shadow-soft-lg transition-all group">
-            <div className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-800 group-hover:bg-zinc-900 group-hover:text-white transition-colors">
-              <Clock className="w-4 h-4" />
-            </div>
-            <div className="mt-4">
-              <div className="text-2xl font-extrabold tracking-tight font-mono text-zinc-900">
-                {totalHoursSaved}h
-              </div>
-              <div className="text-[11px] text-zinc-500 font-medium">
-                Hours Reclaimed
-              </div>
-            </div>
-          </div>
-
-          {/* Card 2: Total Intelligence Queries */}
-          <div className="p-5 rounded-3xl bg-white border border-zinc-200/90 shadow-soft flex flex-col justify-between hover:shadow-soft-lg transition-all group">
-            <div className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-800 group-hover:bg-zinc-900 group-hover:text-white transition-colors">
-              <Sparkles className="w-4 h-4" />
-            </div>
-            <div className="mt-4">
-              <div className="text-2xl font-extrabold tracking-tight font-mono text-zinc-900">
-                1.4K
-              </div>
-              <div className="text-[11px] text-zinc-500 font-medium">
-                Signals Filtered
-              </div>
-            </div>
-          </div>
-
-          {/* Card 3: Featured Capital Return Card with Black Badge + Arrow ↗ */}
-          <div className="p-5 rounded-3xl bg-white border-2 border-zinc-900 shadow-soft-lg flex flex-col justify-between relative overflow-hidden group">
-            <div className="flex items-center justify-between">
-              <div className="w-8 h-8 rounded-full bg-zinc-900 text-white flex items-center justify-center">
-                <DollarSign className="w-4 h-4" />
-              </div>
-              <div className="w-6 h-6 rounded-full bg-zinc-900 text-white flex items-center justify-center text-[10px] font-bold group-hover:scale-110 transition-transform">
-                ↗
-              </div>
-            </div>
-            <div className="mt-4">
-              <div className="text-2xl font-extrabold tracking-tight font-mono text-zinc-900">
-                ${Math.round(totalValue).toLocaleString()}
-              </div>
-              <div className="text-[11px] text-zinc-900 font-bold">
-                Capital Value
-              </div>
-            </div>
-          </div>
-
-          {/* Card 4: Deliverables Built */}
-          <div className="p-5 rounded-3xl bg-white border border-zinc-200/90 shadow-soft flex flex-col justify-between hover:shadow-soft-lg transition-all group">
-            <div className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-800 group-hover:bg-zinc-900 group-hover:text-white transition-colors">
-              <FileText className="w-4 h-4" />
-            </div>
-            <div className="mt-4">
-              <div className="text-2xl font-extrabold tracking-tight font-mono text-zinc-900">
-                {tasksCount}
-              </div>
-              <div className="text-[11px] text-zinc-500 font-medium">
-                Artifacts Built
-              </div>
-            </div>
-          </div>
-
-          {/* Card 5: Pending Approvals */}
-          <div className="p-5 rounded-3xl bg-white border border-zinc-200/90 shadow-soft flex flex-col justify-between hover:shadow-soft-lg transition-all group">
-            <div className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-800 group-hover:bg-zinc-900 group-hover:text-white transition-colors">
-              <AlertTriangle className="w-4 h-4" />
-            </div>
-            <div className="mt-4">
-              <div className="text-2xl font-extrabold tracking-tight font-mono text-zinc-900">
-                1
-              </div>
-              <div className="text-[11px] text-zinc-500 font-medium">
-                Pending Approval
-              </div>
-            </div>
-          </div>
-
-          {/* Card 6: Efficiency Rate */}
-          <div className="p-5 rounded-3xl bg-white border border-zinc-200/90 shadow-soft flex flex-col justify-between hover:shadow-soft-lg transition-all group">
-            <div className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-800 group-hover:bg-zinc-900 group-hover:text-white transition-colors">
-              <CheckCircle2 className="w-4 h-4" />
-            </div>
-            <div className="mt-4">
-              <div className="text-2xl font-extrabold tracking-tight font-mono text-zinc-900">
-                98.4%
-              </div>
-              <div className="text-[11px] text-zinc-500 font-medium">
-                Task Accuracy
-              </div>
-            </div>
-          </div>
+  return <DashboardShell>
+    <div className="space-y-6">
+      <section className="relative overflow-hidden rounded-[1.85rem] bg-[var(--ink)] px-6 py-7 text-[var(--paper)] shadow-soft-lg sm:px-8 sm:py-9">
+        <div className="absolute inset-0 opacity-30 [background-image:linear-gradient(rgba(255,253,247,0.12)_1px,transparent_1px),linear-gradient(90deg,rgba(255,253,247,0.12)_1px,transparent_1px)] [background-size:36px_36px]" />
+        <div className="relative grid gap-8 lg:grid-cols-[1.35fr_0.85fr] lg:items-end">
+          <div><p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--tan-light)]">Operating intelligence</p><h1 className="mt-3 max-w-2xl font-display text-4xl leading-[0.95] tracking-[-0.055em] sm:text-5xl">Turn reclaimed time into measurable leverage.</h1><p className="mt-4 max-w-xl text-sm leading-relaxed text-[rgba(255,253,247,0.7)]">Your dashboard converts completed operating work into a transparent capital-equivalent estimate—not a vague activity score.</p></div>
+          <div className="rounded-2xl border border-[rgba(255,253,247,0.18)] bg-[rgba(255,253,247,0.08)] p-5 backdrop-blur-sm"><div className="flex items-center justify-between"><span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--tan-light)]">Capital reclaimed</span><span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--tan-wash)] text-[var(--ink)]"><ArrowUpRight className="h-4 w-4" /></span></div><p className="mt-5 font-mono text-4xl font-bold tracking-[-0.06em]">${totalValue.toLocaleString()}</p><p className="mt-2 text-xs text-[rgba(255,253,247,0.7)]">{hours} verified hours × ${hourlyRate}/hour</p></div>
         </div>
       </section>
 
-      {/* MIDDLE SECTION: STATISTICS CHART & PENDING APPROVALS (REFERENCE 2 REPLICA) */}
-      <section className="dashboard-telemetry order-3 grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left: Statistics Bar Chart Card (2 Cols) */}
-        <div className="telemetry-chart lg:col-span-2 p-6 sm:p-7 rounded-3xl bg-white border border-zinc-200/90 shadow-soft space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h2 className="text-base font-bold text-zinc-900 tracking-tight">
-                Value Telemetry History
-              </h2>
-              <p className="text-xs text-zinc-500">
-                Monthly breakdown of reclaimed hours and capital equivalent.
-              </p>
-            </div>
-
-            {/* Legend & Tooltip Reference */}
-            <div className="flex items-center gap-4 text-xs">
-              <div className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-zinc-900" />
-                <span className="text-zinc-600 font-medium">Reclaimed Value ($)</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-zinc-300" />
-                <span className="text-zinc-400 font-medium">Manual Hours (h)</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Custom Monochrome Bar Chart Visualization */}
-          <div className="pt-4 pb-2">
-            <div className="h-48 w-full flex items-end justify-between gap-2 sm:gap-4 px-2 border-b border-zinc-100 relative">
-              {/* Highlight Pill Tooltip (Reference 2 replica at August/Run 8) */}
-              <div className="absolute top-2 left-[58%] -translate-x-1/2 flex flex-col items-center pointer-events-none">
-                <div className="px-3 py-1 rounded-full bg-zinc-900 text-white text-[11px] font-bold font-mono shadow-pill">
-                  $1,420
-                </div>
-                <div className="w-0.5 h-6 bg-zinc-900 border-dashed" />
-              </div>
-
-              {[
-                { month: "Jan", val: 40, hrs: 30 },
-                { month: "Feb", val: 85, hrs: 65 },
-                { month: "Mar", val: 50, hrs: 40 },
-                { month: "Apr", val: 70, hrs: 55 },
-                { month: "May", val: 55, hrs: 45 },
-                { month: "Jun", val: 90, hrs: 70 },
-                { month: "Jul", val: 65, hrs: 50 },
-                { month: "Aug", val: 95, hrs: 80, highlighted: true },
-                { month: "Sep", val: 60, hrs: 48 },
-                { month: "Oct", val: 90, hrs: 72 },
-                { month: "Nov", val: 45, hrs: 35 },
-                { month: "Dec", val: 75, hrs: 60 },
-              ].map((item) => (
-                <div
-                  key={item.month}
-                  className="flex-1 flex flex-col items-center gap-1 group cursor-pointer h-full justify-end"
-                >
-                  <div className="w-full flex items-end justify-center gap-1 h-full">
-                    {/* Primary Black Bar */}
-                    <div
-                      style={{ height: `${item.val}%` }}
-                      className={`w-2.5 sm:w-3.5 rounded-t-sm transition-all duration-300 ${
-                        item.highlighted
-                          ? "bg-zinc-900"
-                          : "bg-zinc-900/85 group-hover:bg-zinc-900"
-                      }`}
-                    />
-                    {/* Secondary Zinc Bar */}
-                    <div
-                      style={{ height: `${item.hrs}%` }}
-                      className="w-2.5 sm:w-3.5 rounded-t-sm bg-zinc-200 group-hover:bg-zinc-300 transition-all duration-300"
-                    />
-                  </div>
-                  <span className="text-[10px] font-mono text-zinc-400 group-hover:text-zinc-900">
-                    {item.month}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Right: Pending Approvals Card (1 Col) - Reference 2 Replica */}
-        <div className="telemetry-approvals p-6 sm:p-7 rounded-3xl bg-white border border-zinc-200/90 shadow-soft flex flex-col justify-between space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-bold text-zinc-900 tracking-tight">
-              Pending Approvals
-            </h2>
-            <button className="text-zinc-400 hover:text-zinc-700">
-              <MoreVertical className="w-4 h-4" />
-            </button>
-          </div>
-
-          <div className="space-y-3">
-            {[
-              {
-                brand: "Stripe",
-                task: "Fee Diff Scrape & Doc Create",
-                date: "Today 10:45 GMT",
-                status: "Pending",
-              },
-              {
-                brand: "X Feeds",
-                task: "Export 18 Leads to Sheets",
-                date: "Today 08:30 GMT",
-                status: "Pending",
-              },
-              {
-                brand: "Adyen",
-                task: "Product Launch Comparison",
-                date: "Yesterday 18:20 GMT",
-                status: "Pending",
-              },
-            ].map((approval) => (
-              <div
-                key={approval.brand}
-                className="p-3.5 rounded-2xl bg-zinc-50 border border-zinc-100 flex items-center justify-between hover:bg-zinc-100/70 transition-all"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-zinc-900 text-white flex items-center justify-center text-xs font-bold font-mono">
-                    {approval.brand[0]}
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-zinc-900">
-                      {approval.brand}
-                    </div>
-                    <div className="text-[10px] text-zinc-500">
-                      {approval.date}
-                    </div>
-                  </div>
-                </div>
-
-                <button className="px-3 py-1 rounded-lg text-[10px] font-semibold bg-white border border-zinc-300 text-zinc-700 hover:bg-zinc-900 hover:text-white hover:border-zinc-900 transition-all shadow-sm">
-                  {approval.status}
-                </button>
-              </div>
-            ))}
-          </div>
-
-          <p className="text-[10px] text-zinc-400 text-center font-mono">
-            Zero actions execute without explicit authorization.
-          </p>
-        </div>
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {[{ label: "Hours reclaimed", value: `${hours}h`, note: "Across completed work", icon: Clock3, tone: "bg-[var(--sand)]" }, { label: "Capital equivalent", value: `$${totalValue.toLocaleString()}`, note: "At your operating rate", icon: DollarSign, tone: "bg-[#edf3e8]" }, { label: "Signals filtered", value: "1,426", note: "Qualified this period", icon: Sparkles, tone: "bg-[#f1ece6]" }, { label: "Delivery confidence", value: "98.4%", note: "Completed without rework", icon: CheckCircle2, tone: "bg-[var(--tan-wash)]" }].map((stat) => { const Icon = stat.icon; return <article key={stat.label} className="group rounded-2xl border border-[var(--line)] bg-[var(--paper)] p-5 shadow-soft transition-transform hover:-translate-y-0.5"><div className={`flex h-9 w-9 items-center justify-center rounded-xl ${stat.tone} text-[var(--ink)]`}><Icon className="h-4 w-4" /></div><p className="mt-6 font-mono text-2xl font-bold tracking-[-0.06em]">{stat.value}</p><p className="mt-1 text-xs font-semibold">{stat.label}</p><p className="mt-1 text-[11px] text-[var(--muted-ink)]">{stat.note}</p></article>; })}
       </section>
 
-      {/* BOTTOM SECTION: OPERATR AGENT CHAT & RUNS MANAGEMENT */}
-      <section id="workspace" className="dashboard-workspace order-1 rounded-3xl bg-white border border-zinc-200/90 shadow-soft overflow-hidden scroll-mt-6">
-        {/* Section Header with Tab Switcher */}
-        <div className="px-5 sm:px-6 py-4 border-b border-zinc-100 flex flex-col xl:flex-row xl:items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => setActiveTab("chat")}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                activeTab === "chat"
-                  ? "bg-zinc-900 text-white shadow-sm"
-                  : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100"
-              }`}
-            >
-              Operatr Agent Workspace
-            </button>
-            <button
-              onClick={() => setActiveTab("table")}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                activeTab === "table"
-                  ? "bg-zinc-900 text-white shadow-sm"
-                  : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100"
-              }`}
-            >
-              Recent Runs & Tasks ({runs.length})
-            </button>
-          </div>
-        </div>
+      <section className="grid gap-6 xl:grid-cols-[1.55fr_0.75fr]">
+        <article className="overflow-hidden rounded-[1.6rem] border border-[var(--line)] bg-[var(--paper)] shadow-soft">
+          <div className="flex flex-col gap-4 border-b border-[var(--line)] px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6"><div><p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--tan)]">Value trajectory</p><h2 className="mt-1 text-base font-bold tracking-tight">Capital equivalent by month</h2></div><div className="flex items-center gap-3 text-[10px] font-mono text-[var(--muted-ink)]"><span className="inline-flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-[var(--ink)]" />Value ($)</span><span className="inline-flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-[#9aaa83]" />Hours</span></div></div>
+          <div className="grid grid-cols-[2.5rem_1fr] gap-3 px-4 pb-5 pt-6 sm:px-6"><div className="flex h-56 flex-col justify-between pb-6 text-right font-mono text-[9px] text-[var(--muted-ink)]"><span>$1.6k</span><span>$1.2k</span><span>$800</span><span>$400</span><span>$0</span></div><div className="relative h-56 border-b border-[var(--line)] [background-image:linear-gradient(to_bottom,transparent_24%,rgba(87,80,69,0.12)_25%,transparent_26%,transparent_49%,rgba(87,80,69,0.12)_50%,transparent_51%,transparent_74%,rgba(87,80,69,0.12)_75%,transparent_76%)]"><div className="absolute inset-x-0 top-0 flex h-[calc(100%-1.35rem)] items-end justify-between gap-2">{telemetry.map((point) => <div key={point.month} className="group relative flex h-full flex-1 cursor-default items-end justify-center"><div className="absolute bottom-0 flex items-end gap-1"><span style={{ height: `${(point.value / maxValue) * 100}%` }} className="w-3 rounded-t-md bg-[var(--ink)] transition-all duration-300 group-hover:bg-[#526448] sm:w-5" /><span style={{ height: `${(point.hours / 12) * 100}%` }} className="w-1.5 rounded-t-md bg-[#a7b796] sm:w-2.5" /></div><div className="pointer-events-none absolute -top-1 z-10 hidden min-w-max rounded-lg bg-[var(--ink)] px-2 py-1.5 text-center font-mono text-[9px] text-[var(--paper)] shadow-lg group-hover:block"><b>${point.value.toLocaleString()}</b><br />{point.hours}h reclaimed</div><span className="absolute -bottom-6 font-mono text-[9px] text-[var(--muted-ink)]">{point.month}</span></div>)}</div></div></div>
+          <div className="mx-5 mb-5 rounded-2xl bg-[var(--canvas)] px-4 py-3 sm:mx-6"><p className="text-xs font-semibold">How ROI is calculated</p><p className="mt-1 text-[11px] leading-relaxed text-[var(--muted-ink)]"><b className="text-[var(--ink)]">Completed run time saved</b> × your <b className="text-[var(--ink)]">${hourlyRate}/hour operating rate</b> = capital-equivalent value. Change the rate in Settings at any time.</p></div>
+        </article>
 
-        {/* TAB 1: OPERATR AGENT CHAT */}
-        {activeTab === "chat" && (
-          <div className="p-5 sm:p-6">
-            <DashboardChat />
-          </div>
-        )}
-
-        {/* TAB 2: RECENT RUNS & TASKS TABLE (REFERENCE 2 MANAGE JOBS REPLICA) */}
-        {activeTab === "table" && (
-          <div className="p-6">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-zinc-100 text-[11px] font-mono uppercase text-zinc-400">
-                    <th className="py-3 px-4">Task Directive</th>
-                    <th className="py-3 px-4">Tools Executed</th>
-                    <th className="py-3 px-4">Status</th>
-                    <th className="py-3 px-4">Reclaimed Time</th>
-                    <th className="py-3 px-4">Capital Value</th>
-                    <th className="py-3 px-4">Date</th>
-                    <th className="py-3 px-4 text-right">Deliverable</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100 text-xs">
-                  {runs.map((run) => (
-                    <tr key={run.id} className="hover:bg-zinc-50/80 transition-colors">
-                      <td className="py-3.5 px-4 font-semibold text-zinc-900 max-w-xs truncate">
-                        {run.title}
-                      </td>
-                      <td className="py-3.5 px-4 font-mono text-zinc-500">
-                        {run.tool}
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span
-                          className={`inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-semibold ${
-                            run.status === "Completed"
-                              ? "bg-zinc-100 text-zinc-800 border border-zinc-200"
-                              : run.status === "Pending Approval"
-                              ? "bg-amber-100 text-amber-800 border border-amber-200"
-                              : "bg-blue-100 text-blue-800"
-                          }`}
-                        >
-                          {run.status}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 font-mono font-bold text-zinc-900">
-                        +{run.hoursSaved}h
-                      </td>
-                      <td className="py-3.5 px-4 font-mono font-bold text-zinc-900">
-                        +${run.value}
-                      </td>
-                      <td className="py-3.5 px-4 text-zinc-400 font-mono text-[11px]">
-                        {run.date}
-                      </td>
-                      <td className="py-3.5 px-4 text-right">
-                        {run.artifactUrl ? (
-                          <a
-                            href={run.artifactUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-zinc-900 hover:underline"
-                          >
-                            <span>Open</span>
-                            <ExternalLink className="w-3 h-3" />
-                          </a>
-                        ) : (
-                          <span className="text-zinc-300 font-mono text-[11px]">--</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+        <aside className="rounded-[1.6rem] border border-[var(--line)] bg-[#eef0e8] p-5 shadow-soft sm:p-6"><div className="flex items-center justify-between"><div><p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[#607050]">This period</p><h2 className="mt-1 text-base font-bold">Operating return</h2></div><TrendingUp className="h-5 w-5 text-[#607050]" /></div><div className="mt-8 border-y border-[#d4dbc9] py-5"><p className="font-mono text-4xl font-bold tracking-[-0.07em]">6.8×</p><p className="mt-1 text-xs text-[#526448]">Estimated return on the time you delegated to Operatr.</p></div><dl className="mt-5 space-y-3 text-xs"><div className="flex justify-between"><dt className="text-[var(--muted-ink)]">Work completed</dt><dd className="font-mono font-bold">42 runs</dd></div><div className="flex justify-between"><dt className="text-[var(--muted-ink)]">Average time saved</dt><dd className="font-mono font-bold">1.15h / run</dd></div><div className="flex justify-between"><dt className="text-[var(--muted-ink)]">Highest-value month</dt><dd className="font-mono font-bold">Oct · $1,520</dd></div></dl><Link href="/settings" className="mt-6 inline-flex items-center gap-1.5 text-xs font-semibold text-[#526448] hover:text-[var(--ink)]">Adjust operating rate <ArrowUpRight className="h-3.5 w-3.5" /></Link></aside>
       </section>
-    </DashboardShell>
-  );
+
+      <section className="overflow-hidden rounded-[1.6rem] border border-[var(--line)] bg-[var(--paper)] shadow-soft"><div className="flex flex-col gap-3 border-b border-[var(--line)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6"><div className="flex gap-1 rounded-xl bg-[var(--canvas)] p-1"><button onClick={() => setActiveTab("chat")} className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${activeTab === "chat" ? "bg-[var(--ink)] text-[var(--paper)] shadow-sm" : "text-[var(--muted-ink)]"}`}>Ask Operatr</button><button onClick={() => setActiveTab("runs")} className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${activeTab === "runs" ? "bg-[var(--ink)] text-[var(--paper)] shadow-sm" : "text-[var(--muted-ink)]"}`}>Recent work</button></div><Link href="/agent" className="text-xs font-semibold text-[var(--muted-ink)] hover:text-[var(--ink)]">Open full workspace <ArrowUpRight className="ml-1 inline h-3.5 w-3.5" /></Link></div>{activeTab === "chat" ? <div className="p-5 sm:p-6"><DashboardChat /></div> : <div className="divide-y divide-[var(--line)]">{recentRuns.map((run) => <div key={run.title} className="grid gap-3 px-5 py-4 sm:grid-cols-[1.6fr_0.8fr_0.5fr_0.5fr_auto] sm:items-center sm:px-6"><div><p className="text-xs font-semibold">{run.title}</p><p className="mt-1 text-[11px] text-[var(--muted-ink)]">{run.kind}</p></div><span className="w-fit rounded-full bg-[var(--sand)] px-2 py-1 font-mono text-[9px] uppercase tracking-[0.08em] text-[var(--muted-ink)]">{run.state}</span><span className="font-mono text-xs font-bold">{run.hours}</span><span className="font-mono text-xs font-bold text-[#526448]">{run.value}</span><button className="justify-self-start rounded-lg p-1 text-[var(--muted-ink)] hover:bg-[var(--sand)]"><MoreHorizontal className="h-4 w-4" /></button></div>)}</div>}</section>
+    </div>
+  </DashboardShell>;
 }
