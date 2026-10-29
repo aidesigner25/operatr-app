@@ -15,3 +15,6 @@ out/
 
 # operating-system files
 .DS_Store
+
+# Temporary outputs from local image generation; selected production assets live in public/images.
+generated_images/

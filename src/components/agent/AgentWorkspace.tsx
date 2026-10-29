@@ -45,6 +45,7 @@ export function AgentWorkspace() {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [isSavingTitle, setIsSavingTitle] = useState(false);
+  const [runTrace, setRunTrace] = useState("");
   const abortRef = useRef<AbortController | null>(null);
 
   const loadConversations = useCallback(async () => {
@@ -65,6 +66,7 @@ export function AgentWorkspace() {
   const openConversation = async (conversation: Conversation) => {
     if (isRunning) return;
     setError("");
+    setRunTrace("");
     setIsLoading(true);
     try {
       const response = await fetch(`/api/chat/conversations/${conversation.id}`, { cache: "no-store" });
@@ -127,11 +129,36 @@ export function AgentWorkspace() {
     }
   };
 
+  const persistRuntime = async (next: { provider: Provider; model: string; responseStyle: ResponseStyle }) => {
+    if (!activeConversation) {
+      setProvider(next.provider);
+      setModel(next.model);
+      setStyle(next.responseStyle);
+      return;
+    }
+    if (isRunning) return;
+    setError("");
+    const response = await fetch(`/api/chat/conversations/${activeConversation.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(next),
+    });
+    const payload = await readJson<ApiResponse<{ conversation: Conversation }>>(response);
+    if (!response.ok || !payload.data?.conversation) {
+      setError(payload.error?.message || "The next-response settings could not be updated.");
+      return;
+    }
+    setActiveConversation(payload.data.conversation);
+    setConversations((current) => current.map((item) => item.id === payload.data!.conversation.id ? payload.data!.conversation : item));
+    setProvider(payload.data.conversation.provider);
+    setModel(payload.data.conversation.model);
+    setStyle(payload.data.conversation.response_style);
+  };
+
   const applyProvider = (nextProvider: Provider) => {
-    if (activeConversation) return;
-    setProvider(nextProvider);
-    setModel(MODELS[nextProvider][0].id);
+    const nextModel = MODELS[nextProvider][0].id;
     setCustomModel("");
+    void persistRuntime({ provider: nextProvider, model: nextModel, responseStyle: activeConversation?.response_style || style });
   };
 
   const appendDelta = (id: string, text: string) => setMessages((current) => current.map((message) => message.id === id ? { ...message, content: message.content + text } : message));
@@ -142,6 +169,7 @@ export function AgentWorkspace() {
     setError("");
     setPrompt("");
     setIsRunning(true);
+    setRunTrace("Preparing private context");
     const controller = new AbortController();
     abortRef.current = controller;
     const selectedModel = model === "__custom" ? `custom:${customModel.trim()}` : model;
@@ -185,8 +213,9 @@ export function AgentWorkspace() {
         const eventName = raw.match(/^event:\s*(.+)$/m)?.[1];
         const data = raw.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n");
         if (!data) return;
-        const payload = JSON.parse(data) as { text?: string; message?: string; status?: Message["status"]; title?: string };
+        const payload = JSON.parse(data) as { text?: string; message?: string; status?: Message["status"]; title?: string; detail?: string };
         if (eventName === "delta" && payload.text) appendDelta(assistantId, payload.text);
+        if (eventName === "trace" && payload.detail) setRunTrace(payload.detail);
         if (eventName === "error") throw new Error(payload.message || "The provider could not complete this request.");
         if (eventName === "title" && payload.title) {
           const title = payload.title;
@@ -211,6 +240,7 @@ export function AgentWorkspace() {
     } finally {
       abortRef.current = null;
       setIsRunning(false);
+      setRunTrace("");
     }
   };
 
@@ -237,13 +267,13 @@ export function AgentWorkspace() {
 
       <div className="flex-1 space-y-5 overflow-y-auto bg-[var(--paper)] p-5 sm:p-7 [background-image:radial-gradient(rgba(87,80,69,0.08)_0.7px,transparent_0.7px)] [background-size:18px_18px]">
         <div className="mx-auto max-w-3xl space-y-5">
-          <div className="rounded-xl border border-[var(--line)] bg-[rgba(235,229,218,0.54)] px-3 py-2 text-center font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--muted-ink)]">{activeConversation ? `${providerLabel[activeConversation.provider]} · ${activeConversation.model} · ${activeConversation.response_style}` : "Choose a provider and begin a private conversation"}</div>
+          <div className="rounded-xl border border-[var(--line)] bg-[rgba(235,229,218,0.54)] px-3 py-2 text-center font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--muted-ink)]">{activeConversation ? `${providerLabel[activeConversation.provider]} · ${activeConversation.model} · ${activeConversation.response_style} · applies to the next response` : "Choose a provider and begin a private conversation"}</div>
           {error && <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-800"><AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{error}</div>}
-          {isLoading ? <div className="flex items-center gap-3 text-xs text-[var(--muted-ink)]"><Loader2 className="h-4 w-4 animate-spin" />Loading conversations…</div> : messages.length === 0 ? <div className="rounded-2xl border border-dashed border-[var(--line)] bg-[rgba(255,253,247,0.6)] p-7 text-center"><Sparkles className="mx-auto h-5 w-5 text-[var(--tan)]" /><p className="mt-3 text-sm font-medium">Ready when you are.</p><p className="mt-1 text-xs leading-relaxed text-[var(--muted-ink)]">Start a private conversation. No web, tool, or file actions are enabled in this phase.</p></div> : messages.map((message) => <div key={message.id} className={`flex gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`}>{message.role === "assistant" && <span className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[var(--ink)]"><img src="/images/operatr_icon.png" alt="Operatr" className="h-full w-full object-cover scale-[1.06]" /></span>}<div className={`max-w-[88%] rounded-2xl p-4 text-sm leading-relaxed shadow-sm ${message.role === "user" ? "rounded-tr-sm bg-[var(--ink)] text-[var(--paper)]" : "rounded-tl-sm border border-[var(--line)] bg-[var(--canvas)] text-[var(--ink)]"}`}>{message.content ? message.role === "assistant" ? <ChatMarkdown content={message.content} /> : <p className="whitespace-pre-wrap">{message.content}</p> : <span className="inline-flex items-center gap-2 font-mono text-xs text-[var(--muted-ink)]"><Loader2 className="h-3.5 w-3.5 animate-spin" />Thinking…</span>}{message.role === "assistant" && message.status === "completed" && <div className="mt-3 flex items-center gap-2 border-t border-[var(--line)] pt-3 font-mono text-[10px] text-[var(--muted-ink)]"><Check className="w-3.5 h-3.5 text-[#748260]" />Private response saved</div>}{message.status === "cancelled" && <p className="mt-2 text-[10px] font-mono text-[var(--muted-ink)]">Response stopped</p>}</div></div>)}
+          {isLoading ? <div className="flex items-center gap-3 text-xs text-[var(--muted-ink)]"><Loader2 className="h-4 w-4 animate-spin" />Loading conversations…</div> : messages.length === 0 ? <div className="rounded-2xl border border-dashed border-[var(--line)] bg-[rgba(255,253,247,0.6)] p-7 text-center"><Sparkles className="mx-auto h-5 w-5 text-[var(--tan)]" /><p className="mt-3 text-sm font-medium">Ready when you are.</p><p className="mt-1 text-xs leading-relaxed text-[var(--muted-ink)]">Start a private conversation. No web, tool, or file actions are enabled in this phase.</p></div> : messages.map((message) => <div key={message.id} className={`flex gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`}>{message.role === "assistant" && <span className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[var(--ink)]"><img src="/images/operatr_icon.png" alt="Operatr" className="h-full w-full object-cover scale-[1.06]" /></span>}<div className={`max-w-[88%] rounded-2xl p-4 text-sm leading-relaxed shadow-sm ${message.role === "user" ? "rounded-tr-sm bg-[var(--ink)] text-[var(--paper)]" : "rounded-tl-sm border border-[var(--line)] bg-[var(--canvas)] text-[var(--ink)]"}`}>{message.content ? message.role === "assistant" ? <ChatMarkdown content={message.content} /> : <p className="whitespace-pre-wrap">{message.content}</p> : <span className="inline-flex items-center gap-2 font-mono text-xs text-[var(--muted-ink)]"><Loader2 className="h-3.5 w-3.5 animate-spin" />{runTrace || "Preparing response"}</span>}{message.role === "assistant" && message.status === "completed" && <div className="mt-3 flex items-center gap-2 border-t border-[var(--line)] pt-3 font-mono text-[10px] text-[var(--muted-ink)]"><Check className="w-3.5 h-3.5 text-[#748260]" />Private response saved</div>}{message.status === "cancelled" && <p className="mt-2 text-[10px] font-mono text-[var(--muted-ink)]">Response stopped</p>}</div></div>)}
         </div>
       </div>
 
-      <footer className="border-t border-[var(--line)] bg-[var(--paper)] p-4 sm:p-5"><div className="mx-auto max-w-3xl"><div className="mb-2 flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.08em] text-[var(--muted-ink)]"><FileText className="h-3 w-3" />File uploads are not enabled yet</div><div className="rounded-2xl border border-[var(--line)] bg-[var(--canvas)] p-2 focus-within:border-[var(--tan)]"><div className="flex flex-wrap items-center gap-1 border-b border-[var(--line)] px-1 pb-2"><select value={currentProvider} disabled={Boolean(activeConversation)} onChange={(event) => applyProvider(event.target.value as Provider)} aria-label="Provider" className="agent-select disabled:cursor-not-allowed disabled:opacity-70">{(Object.keys(MODELS) as Provider[]).map((option) => <option key={option} value={option}>{providerLabel[option]}</option>)}</select><select value={activeConversation ? currentModel : model} disabled={Boolean(activeConversation)} onChange={(event) => setModel(event.target.value)} aria-label="Model" className="agent-select disabled:cursor-not-allowed disabled:opacity-70">{MODELS[currentProvider].map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}{activeConversation && !MODELS[currentProvider].some((option) => option.id === currentModel) && <option value={currentModel}>{currentModel}</option>}<option value="__custom">Custom model ID…</option></select>{!activeConversation && model === "__custom" && <input value={customModel} onChange={(event) => setCustomModel(event.target.value)} placeholder="provider model ID" className="agent-select w-40" />}<select value={activeConversation ? activeConversation.response_style : style} disabled={Boolean(activeConversation)} onChange={(event) => setStyle(event.target.value as ResponseStyle)} aria-label="Response effort" className="agent-select disabled:cursor-not-allowed disabled:opacity-70"><option value="concise">Concise</option><option value="medium">Standard</option><option value="deep">Deep</option></select></div><div className="mt-2 flex items-center gap-2"><button type="button" disabled title="File uploads are intentionally deferred" className="cursor-not-allowed rounded-xl p-2.5 text-[var(--line)]"><Paperclip className="w-4 h-4" /></button><textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} rows={1} placeholder="Ask Operatr to think, decide, or create…" className="min-h-10 min-w-0 flex-1 resize-none bg-transparent px-1 py-2 text-sm text-[var(--ink)] outline-none placeholder:text-[var(--muted-ink)]" disabled={isRunning} /><button type="button" onClick={() => void send()} disabled={!prompt.trim() || isRunning || (model === "__custom" && !customModel.trim())} className="rounded-xl bg-[var(--ink)] p-2.5 text-[var(--paper)] transition-transform enabled:hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-40"><Send className="w-4 h-4" /></button></div></div></div></footer>
+      <footer className="border-t border-[var(--line)] bg-[var(--paper)] p-4 sm:p-5"><div className="mx-auto max-w-3xl"><div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[9px] uppercase tracking-[0.08em] text-[var(--muted-ink)]"><span className="flex items-center gap-1.5"><FileText className="h-3 w-3" />File uploads are not enabled yet</span><span>90s run limit</span><span>One pre-response retry</span><span>Provider change shares chat context</span></div><div className="rounded-2xl border border-[var(--line)] bg-[var(--canvas)] p-2 focus-within:border-[var(--tan)]"><div className="flex flex-wrap items-center gap-1 border-b border-[var(--line)] px-1 pb-2"><select value={currentProvider} disabled={isRunning} onChange={(event) => applyProvider(event.target.value as Provider)} aria-label="Provider" className="agent-select disabled:cursor-not-allowed disabled:opacity-70">{(Object.keys(MODELS) as Provider[]).map((option) => <option key={option} value={option}>{providerLabel[option]}</option>)}</select><select value={activeConversation ? currentModel : model} disabled={isRunning} onChange={(event) => void persistRuntime({ provider: currentProvider, model: event.target.value, responseStyle: activeConversation?.response_style || style })} aria-label="Model" className="agent-select disabled:cursor-not-allowed disabled:opacity-70">{MODELS[currentProvider].map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}{activeConversation && !MODELS[currentProvider].some((option) => option.id === currentModel) && <option value={currentModel}>{currentModel}</option>}{!activeConversation && <option value="__custom">Custom model ID…</option>}</select>{!activeConversation && model === "__custom" && <input value={customModel} onChange={(event) => setCustomModel(event.target.value)} placeholder="provider model ID" className="agent-select w-40" />}<select value={activeConversation ? activeConversation.response_style : style} disabled={isRunning} onChange={(event) => void persistRuntime({ provider: currentProvider, model: currentModel, responseStyle: event.target.value as ResponseStyle })} aria-label="Response effort" className="agent-select disabled:cursor-not-allowed disabled:opacity-70"><option value="concise">Concise · 800 max</option><option value="medium">Standard · 2k max</option><option value="deep">Deep · 4k max</option></select></div><div className="mt-2 flex items-center gap-2"><button type="button" disabled title="File uploads are intentionally deferred" className="cursor-not-allowed rounded-xl p-2.5 text-[var(--line)]"><Paperclip className="w-4 h-4" /></button><textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} rows={1} placeholder="Ask Operatr to think, decide, or create…" className="min-h-10 min-w-0 flex-1 resize-none bg-transparent px-1 py-2 text-sm text-[var(--ink)] outline-none placeholder:text-[var(--muted-ink)]" disabled={isRunning} /><button type="button" onClick={() => void send()} disabled={!prompt.trim() || isRunning || (model === "__custom" && !customModel.trim())} className="rounded-xl bg-[var(--ink)] p-2.5 text-[var(--paper)] transition-transform enabled:hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-40"><Send className="w-4 h-4" /></button></div></div></div></footer>
     </section>
   </div>;
 }

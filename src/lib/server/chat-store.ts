@@ -2,6 +2,7 @@ import "server-only";
 
 import { supabaseRest } from "@/lib/server/supabase";
 import type { ChatMessage, ChatProvider, ChatRole, ResponseStyle } from "@/lib/server/chat-types";
+import type { AgentRunStatus, AgentTraceStage } from "@/lib/server/agent-runtime";
 
 export type ConversationRecord = {
   id: string;
@@ -21,6 +22,8 @@ type MessageRecord = {
   status: "streaming" | "completed" | "cancelled" | "failed";
   created_at: string;
 };
+
+type AgentRunRecord = { id: string };
 
 function titleFor(content: string) {
   const normalized = content
@@ -101,6 +104,60 @@ export async function touchConversation(conversationId: string, accessToken: str
   });
 }
 
+export async function createAgentRun(input: {
+  conversationId: string;
+  userId: string;
+  provider: ChatProvider;
+  model: string;
+  responseStyle: ResponseStyle;
+  maxOutputTokens: number;
+  inputCharacters: number;
+}, accessToken: string) {
+  const response = await supabaseRest<AgentRunRecord[]>("chat_agent_runs", accessToken, {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      conversation_id: input.conversationId,
+      user_id: input.userId,
+      provider: input.provider,
+      model: input.model,
+      response_style: input.responseStyle,
+      max_output_tokens: input.maxOutputTokens,
+      input_characters: input.inputCharacters,
+      status: "running",
+    }),
+  });
+  return { ...response, data: response.data?.[0] || null };
+}
+
+export async function saveAgentTraceEvent(input: { runId: string; userId: string; stage: AgentTraceStage; detail: string }, accessToken: string) {
+  return supabaseRest("chat_agent_run_events", accessToken, {
+    method: "POST",
+    headers: { Prefer: "return=minimal" },
+    body: JSON.stringify({ run_id: input.runId, user_id: input.userId, stage: input.stage, detail: input.detail }),
+  });
+}
+
+export async function finishAgentRun(input: {
+  runId: string;
+  status: AgentRunStatus;
+  outputCharacters: number;
+  retryCount: number;
+  errorCode?: string;
+}, accessToken: string) {
+  return supabaseRest(`chat_agent_runs?id=eq.${encodeURIComponent(input.runId)}`, accessToken, {
+    method: "PATCH",
+    headers: { Prefer: "return=minimal" },
+    body: JSON.stringify({
+      status: input.status,
+      output_characters: input.outputCharacters,
+      retry_count: input.retryCount,
+      error_code: input.errorCode || null,
+      completed_at: new Date().toISOString(),
+    }),
+  });
+}
+
 export async function renameConversation(conversationId: string, title: string, accessToken: string) {
   const response = await supabaseRest<ConversationRecord[]>(
     `chat_conversations?id=eq.${encodeURIComponent(conversationId)}`,
@@ -109,6 +166,28 @@ export async function renameConversation(conversationId: string, title: string, 
       method: "PATCH",
       headers: { Prefer: "return=representation" },
       body: JSON.stringify({ title }),
+    },
+  );
+  return { ...response, data: response.data?.[0] || null };
+}
+
+export async function updateConversationRuntime(
+  conversationId: string,
+  runtime: { provider: ChatProvider; model: string; responseStyle: ResponseStyle },
+  accessToken: string,
+) {
+  const response = await supabaseRest<ConversationRecord[]>(
+    `chat_conversations?id=eq.${encodeURIComponent(conversationId)}`,
+    accessToken,
+    {
+      method: "PATCH",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({
+        provider: runtime.provider,
+        model: runtime.model,
+        response_style: runtime.responseStyle,
+        updated_at: new Date().toISOString(),
+      }),
     },
   );
   return { ...response, data: response.data?.[0] || null };

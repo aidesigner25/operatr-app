@@ -17,7 +17,7 @@ type ProviderInput = {
 };
 
 export class ChatRuntimeError extends Error {
-  constructor(public readonly code: string, message: string, public readonly status = 400) {
+  constructor(public readonly code: string, message: string, public readonly status = 400, public readonly retryable = false) {
     super(message);
   }
 }
@@ -38,11 +38,18 @@ export async function loadProviderCredential(input: { userId: string; provider: 
 }
 
 async function providerFetch(url: string, init: RequestInit, signal: AbortSignal) {
-  const response = await fetch(url, { ...init, signal, cache: "no-store" });
+  let response: Response;
+  try {
+    response = await fetch(url, { ...init, signal, cache: "no-store" });
+  } catch (caught) {
+    if (caught instanceof DOMException && caught.name === "AbortError") throw caught;
+    throw new ChatRuntimeError("provider_network_error", "The provider could not be reached. You can try the same model again.", 502, true);
+  }
   if (response.ok && response.body) return response;
   const body = await response.json().catch(() => null) as { error?: { message?: string }; message?: string } | null;
   const message = body?.error?.message || body?.message || "The provider could not complete this request.";
-  throw new ChatRuntimeError("provider_error", message.slice(0, 300), response.status >= 400 && response.status < 500 ? 400 : 502);
+  const retryable = response.status === 408 || response.status === 409 || response.status === 425 || response.status === 429 || response.status >= 500;
+  throw new ChatRuntimeError("provider_error", message.slice(0, 300), response.status >= 400 && response.status < 500 ? 400 : 502, retryable);
 }
 
 async function* sseData(response: Response): AsyncGenerator<string> {

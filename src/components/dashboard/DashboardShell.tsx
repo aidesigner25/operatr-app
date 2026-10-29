@@ -18,12 +18,14 @@ import {
   Menu,
   X,
 } from "lucide-react";
-import { readOperatorConfig } from "@/lib/browser/operator-config";
 import { signOut } from "@/lib/browser/auth";
+import { OperatorAvatar } from "@/components/profile/OperatorAvatar";
 
 interface DashboardShellProps {
   children: React.ReactNode;
 }
+
+type OperatorProfile = { displayName?: string; avatarChoice?: string; avatarDataUrl?: string | null; hourlyRate?: number };
 
 const NAV_ITEMS = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -39,21 +41,28 @@ export function DashboardShell({ children }: DashboardShellProps) {
   const router = useRouter();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [hourlyRate, setHourlyRate] = useState("150");
-  const [userConfig, setUserConfig] = useState<any>(null);
+  const [profile, setProfile] = useState<OperatorProfile | null>(null);
   const [isSigningOut, setIsSigningOut] = useState(false);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const parsed = readOperatorConfig();
-      if (Object.keys(parsed).length > 0) {
-        try {
-          setUserConfig(parsed);
-          if (parsed.hourlyRate) setHourlyRate(String(parsed.hourlyRate));
-        } catch (e) {
-          // ignore
-        }
+    const loadProfile = async () => {
+      const response = await fetch("/api/profile", { cache: "no-store" });
+      const payload = await response.json().catch(() => ({})) as { data?: { profile?: OperatorProfile } };
+      if (response.ok && payload.data?.profile) {
+        setProfile(payload.data.profile);
+        if (payload.data.profile.hourlyRate !== undefined) setHourlyRate(String(payload.data.profile.hourlyRate));
       }
-    }
+    };
+    const handleProfileUpdate = (event: Event) => {
+      const detail = (event as CustomEvent<OperatorProfile>).detail;
+      if (detail) {
+        setProfile(detail);
+        if (detail.hourlyRate !== undefined) setHourlyRate(String(detail.hourlyRate));
+      } else void loadProfile();
+    };
+    void loadProfile();
+    window.addEventListener("operatr:profile-updated", handleProfileUpdate);
+    return () => window.removeEventListener("operatr:profile-updated", handleProfileUpdate);
   }, []);
 
   const handleSignOut = async () => {
@@ -111,16 +120,14 @@ export function DashboardShell({ children }: DashboardShellProps) {
         <div className="pt-6 border-t border-[var(--line)] flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="relative">
-              <div className="w-10 h-10 rounded-full bg-[var(--ink)] text-[var(--paper)] flex items-center justify-center font-bold text-xs">
-                {userConfig?.primaryProvider ? userConfig.primaryProvider[0].toUpperCase() : <img src="/images/operatr_icon.png" alt="Operatr" className="w-full h-full object-cover rounded-full scale-[1.06]" />}
-              </div>
+              <OperatorAvatar choice={profile?.avatarChoice} imageUrl={profile?.avatarDataUrl} alt="Operator avatar" className="h-10 w-10 rounded-full border border-[var(--line)]" />
               <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[#748260] text-[9px] font-bold text-[var(--paper)] flex items-center justify-center border-2 border-[var(--paper)]">
                 ✓
               </span>
             </div>
             <div>
               <div className="text-xs font-bold text-[var(--ink)] tracking-tight">
-                Active Operator
+                {profile?.displayName || "Active Operator"}
               </div>
               <div className="text-[10px] font-mono text-[var(--muted-ink)]">
                 ${hourlyRate}/hr rate

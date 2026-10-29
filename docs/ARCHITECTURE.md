@@ -39,12 +39,22 @@ The browser must never call an LLM, Tavily, Apify, or Google API with a user cre
 - OpenAI, Anthropic, Google Gemini, and xAI run behind a common streaming interface. Provider fallback, tools, file uploads, model discovery, and background agents are not part of this phase.
 - `OPERATR_ENABLE_CHAT` remains `false` by default. It must be deliberately enabled only after the migration and a provider smoke test.
 
+## Phase 3 agent runtime
+
+- Each chat message creates an owner-scoped run record and a concise execution trace. These capture operational metadata only: selected provider/model, response mode, bounded character/token budgets, retry count, and terminal status. They do not store credentials, hidden reasoning, or raw provider payloads.
+- Conversation context is bounded to the newest 36,000 characters. Response modes use server-enforced output caps: Concise 800 tokens, Standard 2,000, and Deep 4,000.
+- A run has a 90-second server-side deadline. The user can still stop a request from the workspace; partial text, if any, is saved as cancelled.
+- A transient provider failure may retry exactly once only before any text is streamed. The retry uses the exact same provider and model. There is no automatic model or cross-provider fallback.
+- The workspace shows a high-level execution state—such as preparing, generating, retrying, and saving—rather than hidden model reasoning.
+- Operator identity and preferences live in the existing owner-scoped `profiles` table: display name, organization, avatar selection/custom bounded image, hourly rate, business goals, writing sample, and directives. Email remains an Auth concern and is changed only through the server-side Supabase Auth user endpoint.
+- Users may explicitly change provider, model, and response effort on an existing conversation. The persisted choice takes effect on its next request; no automatic provider transition occurs.
+
 ## Implementation order
 
 1. Foundation: conventions, environment template, feature flags, quality checks, and browser-key removal.
 2. Identity and vault: Supabase Auth, middleware, RLS, and encrypted credential storage. **Complete in code; environment and migration setup required.**
 3. Chat: provider-neutral streaming chat, persisted conversations, and the four supported LLM providers. **Complete in code; migration and explicit feature enablement required.**
-4. Operatr runtime: response modes, model policy, safe retry/fallback behavior, and execution telemetry.
+4. Operatr runtime: response modes, model policy, safe retry/fallback behavior, and execution telemetry. **Complete in code; migration and smoke test required.**
 5. Tools: Tavily, a constrained Apify allowlist, then Google OAuth integrations.
 
 ## POC rules
