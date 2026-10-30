@@ -4,7 +4,7 @@ Operatr is a private BYOK agent workspace for strategic research and operational
 
 ## Current boundary
 
-The current front end is a Next.js application with Supabase email/password authentication, protected workspace routes, a preference-only onboarding flow, an encrypted BYOK vault, and a server-side streaming chat runtime. Chat remains disabled until explicitly enabled with a server environment flag; no tools or OAuth integrations are live.
+The current front end is a Next.js application with Supabase email/password authentication, protected workspace routes, a preference-only onboarding flow, an encrypted BYOK vault, a server-side streaming chat runtime, and opt-in Tavily research. Chat and research remain disabled until explicitly enabled with server environment flags; Apify and OAuth integrations are not live.
 
 ```text
 Browser UI -> authenticated Next.js route handler -> server runtime -> approved provider or tool
@@ -36,7 +36,7 @@ The browser must never call an LLM, Tavily, Apify, or Google API with a user cre
 - A chat request decrypts only the signed-in user's selected provider credential in server memory. Browser responses contain conversation data and streamed model text, never the credential or ciphertext.
 - After the first completed exchange, the selected model generates a 3–6 word subject label from the opening message. It is best-effort and cannot interrupt a chat; users can still rename only their own conversations through the protected conversation endpoint.
 - The dashboard composer and Agent workspace use the same persisted conversation API; the dashboard does not simulate tools, task runs, or value calculations.
-- OpenAI, Anthropic, Google Gemini, and xAI run behind a common streaming interface. Provider fallback, tools, file uploads, model discovery, and background agents are not part of this phase.
+- OpenAI, Anthropic, Google Gemini, and xAI run behind a common streaming interface. Provider fallback, file uploads, model discovery, and background agents are not part of this phase.
 - `OPERATR_ENABLE_CHAT` remains `false` by default. It must be deliberately enabled only after the migration and a provider smoke test.
 
 ## Phase 3 agent runtime
@@ -49,13 +49,20 @@ The browser must never call an LLM, Tavily, Apify, or Google API with a user cre
 - Operator identity and preferences live in the existing owner-scoped `profiles` table: display name, organization, avatar selection/custom bounded image, hourly rate, business goals, writing sample, and directives. Email remains an Auth concern and is changed only through the server-side Supabase Auth user endpoint.
 - Users may explicitly change provider, model, and response effort on an existing conversation. The persisted choice takes effect on its next request; no automatic provider transition occurs.
 
+## Phase 4 research tools
+
+- Tavily is disabled unless `OPERATR_ENABLE_TAVILY=true`. A user must explicitly enable **Live web** on an individual message; Operatr then runs one server-side Tavily Basic search using that user's encrypted Tavily key.
+- Requests use a fixed, low-cost schema: up to five results and one bounded excerpt per result; raw pages, Tavily's generated answer, images, arbitrary domain controls, and browser-provided tool parameters are excluded.
+- The web request has a 15-second deadline and per-user rate limit. Result excerpts remain untrusted input and are placed in a bounded, injection-resistant provider context. Only user-visible source links can be retained in the chat answer; telemetry never holds source payloads or credentials.
+- Apify remains explicitly deferred. It will expose only a small server-owned actor allowlist and validated inputs—never arbitrary actor IDs or unconstrained scraping.
+
 ## Implementation order
 
 1. Foundation: conventions, environment template, feature flags, quality checks, and browser-key removal.
 2. Identity and vault: Supabase Auth, middleware, RLS, and encrypted credential storage. **Complete in code; environment and migration setup required.**
 3. Chat: provider-neutral streaming chat, persisted conversations, and the four supported LLM providers. **Complete in code; migration and explicit feature enablement required.**
 4. Operatr runtime: response modes, model policy, safe retry/fallback behavior, and execution telemetry. **Complete in code; migration and smoke test required.**
-5. Tools: Tavily, a constrained Apify allowlist, then Google OAuth integrations.
+5. Tools: Tavily **complete in code; setup and smoke test required**, a constrained Apify allowlist, then Google OAuth integrations.
 
 ## POC rules
 

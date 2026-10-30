@@ -6,12 +6,13 @@ import { ChatRuntimeError, generateConversationTitle, loadProviderCredential, st
 import { getFeatureFlags } from "@/lib/server/feature-flags";
 import { AGENT_RUNTIME_TIMEOUT_MS, boundedProviderMessages, isSafeRetryable, maxOutputTokensFor, runStatusFor, type AgentTraceStage } from "@/lib/server/agent-runtime";
 import { loadOperatorPreferences, operatorSystemInstruction } from "@/lib/server/operator-profile";
+import { searchTavily, tavilyResearchInstruction, type TavilySource } from "@/lib/server/tavily";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type RouteContext = { params: Promise<{ conversationId: string }> };
-type MessageBody = { content?: unknown };
+type MessageBody = { content?: unknown; useWeb?: unknown };
 const encoder = new TextEncoder();
 
 function event(type: string, data: Record<string, unknown>) {
@@ -27,22 +28,32 @@ export async function POST(request: Request, context: RouteContext) {
   const body = await request.json().catch(() => null) as MessageBody | null;
   const content = typeof body?.content === "string" ? body.content.trim() : "";
   if (!content || content.length > 50_000) return jsonError("invalid_message", "Enter a message up to 50,000 characters.", requestId, 400);
+  if (body?.useWeb !== undefined && typeof body.useWeb !== "boolean") return jsonError("invalid_research_request", "Invalid live web research setting.", requestId, 400);
+  const useWeb = body?.useWeb === true;
 
   try {
     const auth = await getAuthenticatedRequest();
     if (!auth) return jsonError("unauthorized", "Sign in is required.", requestId, 401);
     if (!allowRequest(`chat:send:${auth.user.id}`, 20, 60_000)) return jsonError("rate_limited", "Too many messages. Try again shortly.", requestId, 429);
+    if (useWeb && !getFeatureFlags().tavily) return jsonError("research_disabled", "Live web research is not enabled for this environment yet.", requestId, 503);
+    if (useWeb && !allowRequest(`tavily:search:${auth.user.id}`, 8, 10 * 60_000)) return jsonError("research_rate_limited", "Live web research is limited to 8 searches per 10 minutes.", requestId, 429);
 
     const conversation = await getConversation(conversationId, auth.accessToken);
     if (conversation.error) return jsonError("chat_unavailable", "The conversation could not be loaded.", requestId, 503);
     if (!conversation.data) return jsonError("not_found", "Conversation not found.", requestId, 404);
+
+    // Validate every requested recipient before persisting the user message. A missing
+    // Tavily connection should never create an unanswered message in the conversation.
+    const credential = await loadProviderCredential({ userId: auth.user.id, provider: conversation.data.provider, accessToken: auth.accessToken });
+    const tavilyCredential = useWeb
+      ? await loadProviderCredential({ userId: auth.user.id, provider: "tavily", accessToken: auth.accessToken })
+      : null;
 
     const userMessage = await saveMessage({ conversationId, userId: auth.user.id, role: "user", content, status: "completed" }, auth.accessToken);
     if (userMessage.error) return jsonError("chat_unavailable", "Your message could not be saved.", requestId, 503);
     const history = await listMessages(conversationId, auth.accessToken);
     if (history.error) return jsonError("chat_unavailable", "Conversation history could not be loaded.", requestId, 503);
     const isOpeningExchange = history.data.length === 1;
-    const credential = await loadProviderCredential({ userId: auth.user.id, provider: conversation.data.provider, accessToken: auth.accessToken });
     const preferences = await loadOperatorPreferences(auth.user.id, auth.accessToken);
     const systemInstruction = operatorSystemInstruction(conversation.data.response_style, preferences);
     const providerMessages = boundedProviderMessages(toProviderMessages(history.data));
@@ -64,6 +75,7 @@ export async function POST(request: Request, context: RouteContext) {
         let completed = false;
         let retryCount = 0;
         let failure: unknown;
+        let sources: TavilySource[] = [];
         const timeout = AbortSignal.timeout(AGENT_RUNTIME_TIMEOUT_MS);
         const signal = AbortSignal.any([request.signal, timeout]);
         const trace = async (stage: AgentTraceStage, detail: string) => {
@@ -77,6 +89,14 @@ export async function POST(request: Request, context: RouteContext) {
         try {
           controller.enqueue(event("meta", { conversationId, requestId }));
           await trace("preparing", "Preparing private context");
+          let requestSystemInstruction = systemInstruction;
+          if (useWeb && tavilyCredential) {
+            await trace("preparing", "Searching live web with Tavily");
+            sources = await searchTavily({ query: content, credential: tavilyCredential, signal });
+            requestSystemInstruction += tavilyResearchInstruction(sources);
+            controller.enqueue(event("research", { sourceCount: sources.length, sources: sources.map(({ title, url }) => ({ title, url })) }));
+            await trace("preparing", sources.length ? `Found ${sources.length} web sources` : "No web sources were returned");
+          }
           while (!completed) {
             let emittedText = false;
             await trace("generating", retryCount ? "Retrying the selected model" : "Generating with the selected model");
@@ -87,7 +107,7 @@ export async function POST(request: Request, context: RouteContext) {
                 responseStyle: conversation.data!.response_style,
                 messages: providerMessages,
                 credential,
-                systemInstruction,
+                systemInstruction: requestSystemInstruction,
                 signal,
                 maxTokens: maxOutputTokens,
               })) {

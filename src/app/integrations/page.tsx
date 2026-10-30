@@ -64,7 +64,7 @@ export default function IntegrationsPage() {
         if (!response.ok) throw new Error(payload.error?.message || `Could not save ${provider}.`);
       }));
       setValues(emptyCredentials());
-      setMessage(`${entries.length} secure connection${entries.length === 1 ? "" : "s"} saved. Live provider calls remain disabled.`);
+      setMessage(`${entries.length} secure connection${entries.length === 1 ? "" : "s"} saved. Live calls require their corresponding server feature to be enabled.`);
       await loadStatus();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "A credential could not be saved.");

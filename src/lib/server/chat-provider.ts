@@ -22,7 +22,7 @@ export class ChatRuntimeError extends Error {
   }
 }
 
-export async function loadProviderCredential(input: { userId: string; provider: ChatProvider; accessToken: string }) {
+export async function loadProviderCredential(input: { userId: string; provider: ChatProvider | CredentialProvider; accessToken: string }) {
   const result = await supabaseRest<VaultCredentialRecord[]>(
     `vault_credentials?provider=eq.${input.provider}&select=encrypted_credential&limit=1`,
     input.accessToken,
