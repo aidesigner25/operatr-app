@@ -14,6 +14,7 @@ type ProviderInput = {
   signal: AbortSignal;
   systemInstruction?: string;
   maxTokens?: number;
+  lowReasoningEffort?: boolean;
 };
 
 export class ChatRuntimeError extends Error {
@@ -79,14 +80,20 @@ async function* openAiCompatible(input: ProviderInput, baseUrl: string): AsyncGe
       model: resolvedModel(input.model),
       stream: true,
       ...(input.maxTokens ? { max_tokens: input.maxTokens } : {}),
+      ...(input.provider === "openrouter" && input.lowReasoningEffort ? { reasoning: { effort: "low" } } : {}),
       messages: [{ role: "system", content: input.systemInstruction || providerSystemInstruction(input.responseStyle) }, ...input.messages],
     }),
   }, input.signal);
   for await (const data of sseData(response)) {
     if (data === "[DONE]") return;
-    const parsed = JSON.parse(data) as { choices?: { delta?: { content?: string | null } }[] };
+    const parsed = JSON.parse(data) as { error?: { message?: unknown }; choices?: { delta?: { content?: string | null }; finish_reason?: string | null }[] };
+    if (parsed.error) {
+      const message = typeof parsed.error.message === "string" ? parsed.error.message.slice(0, 300) : "The model provider reported an error while streaming.";
+      throw new ChatRuntimeError("provider_stream_error", message, 502, true);
+    }
     const text = parsed.choices?.[0]?.delta?.content;
     if (text) yield text;
+    if (parsed.choices?.[0]?.finish_reason === "length") throw new ChatRuntimeError("provider_output_limit", "The response reached the model's output limit.", 502);
   }
 }
 
@@ -107,8 +114,9 @@ async function* anthropicStream(input: ProviderInput): AsyncGenerator<string> {
     }),
   }, input.signal);
   for await (const data of sseData(response)) {
-    const parsed = JSON.parse(data) as { type?: string; delta?: { text?: string } };
+    const parsed = JSON.parse(data) as { type?: string; delta?: { text?: string; stop_reason?: string } };
     if (parsed.type === "content_block_delta" && parsed.delta?.text) yield parsed.delta.text;
+    if (parsed.type === "message_delta" && parsed.delta?.stop_reason === "max_tokens") throw new ChatRuntimeError("provider_output_limit", "The response reached the model's output limit.", 502);
   }
 }
 
@@ -118,7 +126,12 @@ async function* geminiStream(input: ProviderInput): AsyncGenerator<string> {
     headers: { "x-goog-api-key": input.credential, "Content-Type": "application/json" },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: input.systemInstruction || providerSystemInstruction(input.responseStyle) }] },
-      ...(input.maxTokens ? { generationConfig: { maxOutputTokens: input.maxTokens } } : {}),
+      generationConfig: {
+        ...(input.maxTokens ? { maxOutputTokens: input.maxTokens } : {}),
+        // Gemini 3.8 defaults to medium thinking, which can exhaust a bounded
+        // interactive response window before it emits user-visible text.
+        thinkingConfig: { thinkingLevel: "low" },
+      },
       contents: input.messages.map((message) => ({
         role: message.role === "assistant" ? "model" : "user",
         parts: [{ text: message.content }],
@@ -126,8 +139,9 @@ async function* geminiStream(input: ProviderInput): AsyncGenerator<string> {
     }),
   }, input.signal);
   for await (const data of sseData(response)) {
-    const parsed = JSON.parse(data) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
+    const parsed = JSON.parse(data) as { candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[] };
     for (const part of parsed.candidates?.[0]?.content?.parts || []) if (part.text) yield part.text;
+    if (parsed.candidates?.[0]?.finishReason === "MAX_TOKENS") throw new ChatRuntimeError("provider_output_limit", "The response reached the model's output limit.", 502);
   }
 }
 
@@ -136,6 +150,7 @@ export function streamProviderResponse(input: ProviderInput): AsyncIterable<stri
   switch (input.provider) {
     case "openai": return openAiCompatible(input, "https://api.openai.com/v1");
     case "xai": return openAiCompatible(input, "https://api.x.ai/v1");
+    case "openrouter": return openAiCompatible(input, "https://openrouter.ai/api/v1");
     case "anthropic": return anthropicStream(input);
     case "google": return geminiStream(input);
   }
@@ -143,13 +158,48 @@ export function streamProviderResponse(input: ProviderInput): AsyncIterable<stri
 
 function cleanConversationTitle(value: string) {
   const title = value
-    .replace(/["'`]/g, "")
+    .replace(/^["'`“”]+|["'`“”]+$/g, "")
     .replace(/\s+/g, " ")
     .replace(/[.?!:;]+$/g, "")
     .trim();
   const words = title.split(" ").filter(Boolean);
   if (words.length < 3 || words.length > 6 || title.length > 80) return null;
   return title;
+}
+
+function titleCase(value: string) {
+  return value.split(/(\s+)/).map((part, index) => {
+    const known: Record<string, string> = { openai: "OpenAI", xai: "xAI", nvidia: "NVIDIA", linkedin: "LinkedIn", api: "API", ai: "AI" };
+    const lower = part.toLowerCase();
+    if (known[lower]) return known[lower];
+    if (index > 0 && /^(and|or|of|the|a|an|in|on|for|to|with|from|vs)$/i.test(part)) return lower;
+    if (/[A-Z]/.test(part.slice(1))) return part;
+    return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+  }).join("");
+}
+
+/**
+ * A no-network fallback keeps titles consistent even when a free or busy model
+ * cannot spare a second completion just to name the chat.
+ */
+export function deriveConversationTitle(openingMessage: string) {
+  const normalized = openingMessage
+    .replace(/https?:\/\/\S+/gi, " ")
+    .replace(/^(?:thank you|thanks)[,!\s]*/i, "")
+    .replace(/^(?:please\s+)?(?:can|could|would)\s+you\s+/i, "")
+    .replace(/^(?:tell|show|give)\s+me\s+(?:a bit\s+)?(?:about|of|on)\s+/i, "")
+    .replace(/^(?:please\s+)?(?:tell|show|give|help|walk)\s+me\s+(?:about|through|with)?\s*/i, "")
+    .replace(/^(?:can|could|would)\s+you\s+/i, "")
+    .replace(/^i\s+(?:need|want|would\s+like)\s+(?:to\s+)?/i, "")
+    .replace(/^what\s+(?:is|are)\s+/i, "")
+    .replace(/\band\s+(?:help\s+)?(?:unpack|explain|analy[sz]e)\s+(?:their|its|the)\s+/i, "and ")
+    .replace(/[’']s\b/gi, "")
+    .replace(/[?!.,:;]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const words = normalized.replace(/^compare\b/i, "Comparing").split(" ").filter(Boolean);
+  const title = words.slice(0, 5).join(" ");
+  return cleanConversationTitle(titleCase(title));
 }
 
 /** Generates a compact, user-visible title after the first completed exchange. */
@@ -160,17 +210,19 @@ export async function generateConversationTitle(input: {
   openingMessage: string;
   signal: AbortSignal;
 }) {
-  const instruction = "Create a concise 3 to 6 word title for this chat. Return only the title, in sentence case, with no quotation marks, colon, or ending punctuation. Capture the user's primary subject rather than answering the request.";
+  const instruction = "Create a descriptive, natural 3 to 6 word title for this chat in Title Case. Preserve brand capitalization, such as OpenAI and xAI. Capture the main topic and intent, not filler or a full sentence. For example, a request comparing Anthropic and xAI pricing becomes Comparing Anthropic and xAI Pricing. Return only the title without quotation marks or ending punctuation.";
   let output = "";
   for await (const delta of streamProviderResponse({
     ...input,
     responseStyle: "concise",
-    maxTokens: 24,
+    maxTokens: 128,
+    lowReasoningEffort: true,
     systemInstruction: instruction,
     messages: [{ role: "user", content: input.openingMessage }],
   })) {
     output += delta;
     if (output.length > 120) break;
   }
-  return cleanConversationTitle(output);
+  const title = cleanConversationTitle(output);
+  return title ? titleCase(title) : null;
 }

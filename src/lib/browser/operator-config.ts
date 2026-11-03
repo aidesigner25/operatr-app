@@ -6,7 +6,7 @@ export type OperatorConfig = Record<string, unknown>;
 
 const CONFIG_KEY = "operatr_user_config";
 const SENSITIVE_FIELDS = new Set([
-  "primaryKey", "fallbackKey", "openai", "anthropic", "google", "xai",
+  "primaryKey", "fallbackKey", "openai", "anthropic", "google", "xai", "openrouter",
   "tavilyKey", "apifyKey", "tavily", "apify",
 ]);
 

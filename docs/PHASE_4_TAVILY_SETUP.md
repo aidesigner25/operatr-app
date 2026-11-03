@@ -14,7 +14,7 @@ Add this to the local or deployed server environment, then restart the app:
 OPERATR_ENABLE_TAVILY=true
 ```
 
-Keep the feature disabled in any shared environment until the smoke test has passed. `OPERATR_ENABLE_APIFY` remains off for the next, allowlist-based part of Phase 4.
+Keep the feature disabled in any shared environment until the smoke test has passed. Apify is configured separately with `OPERATR_ENABLE_APIFY`; see [the Apify setup guide](./PHASE_4_APIFY_SETUP.md).
 
 ## 3. Guardrails
 
@@ -39,6 +39,6 @@ Tavily documents `basic` search as one API credit. The explicit per-message cont
 5. Turn **Live web** off and repeat with a normal prompt. No Tavily request should occur.
 6. In Supabase, check that the run events contain only concise lifecycle labels—not credentials, result excerpts, or complete provider payloads.
 
-## Deferred Apify scope
+## Apify scope
 
-Apify stays disabled until Operatr has a short, task-specific actor allowlist. The actor layer will use the same explicit per-response permission, strict input schemas, run/cost limits, normalized bounded results, and a server-side kill switch. It will never accept arbitrary actor IDs from the browser.
+Apify uses the same explicit per-response permission model, with a short task-specific actor allowlist. It never accepts arbitrary actor IDs or custom actor inputs from the browser; see [the Apify setup guide](./PHASE_4_APIFY_SETUP.md) for the exact constraints and smoke test.

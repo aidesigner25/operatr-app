@@ -31,11 +31,11 @@ export function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingProps
   const [step, setStep] = useState<"choice" | "llm" | "tools" | "goals" | "welcome">("choice");
 
   // Onboarding Form State
-  const [primaryProvider, setPrimaryProvider] = useState<"openai" | "anthropic" | "google" | "xai">("openai");
+  const [primaryProvider, setPrimaryProvider] = useState<"openai" | "anthropic" | "google" | "xai" | "openrouter">("openai");
   const [primaryModel, setPrimaryModel] = useState("gpt-4o");
 
   const [enableFallback, setEnableFallback] = useState(false);
-  const [fallbackProvider, setFallbackProvider] = useState<"openai" | "anthropic" | "google" | "xai">("anthropic");
+  const [fallbackProvider, setFallbackProvider] = useState<"openai" | "anthropic" | "google" | "xai" | "openrouter">("anthropic");
   const [fallbackModel, setFallbackModel] = useState("claude-3-5-sonnet-20241022");
   const [googleConnected, setGoogleConnected] = useState(false);
 
@@ -49,16 +49,17 @@ export function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingProps
   const modelOptions = {
     openai: ["gpt-4o", "gpt-4o-mini", "o1-preview", "o1-mini"],
     anthropic: ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"],
-    google: ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.0-flash-exp"],
+    google: ["gemini-3.8-flash", "gemini-3.6-flash"],
     xai: ["grok-2", "grok-2-mini", "grok-beta"],
+    openrouter: ["nvidia/nemotron-3.5-lightning:free", "nvidia/nemotron-3.5-super-vl:free", "nvidia/nemotron-3-ultra-550b-a55b:free", "openrouter/free"],
   };
 
-  const handleProviderChange = (provider: "openai" | "anthropic" | "google" | "xai") => {
+  const handleProviderChange = (provider: "openai" | "anthropic" | "google" | "xai" | "openrouter") => {
     setPrimaryProvider(provider);
     setPrimaryModel(modelOptions[provider][0]);
     // ensure fallback is from a different provider
     if (fallbackProvider === provider) {
-      const remaining = (["openai", "anthropic", "google", "xai"] as const).filter((p) => p !== provider);
+      const remaining = (["openai", "anthropic", "google", "xai", "openrouter"] as const).filter((p) => p !== provider);
       setFallbackProvider(remaining[0]);
       setFallbackModel(modelOptions[remaining[0]][0]);
     }
@@ -149,7 +150,7 @@ export function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingProps
                     Interactive Setup
                   </h3>
                   <p className="text-xs text-zinc-500 mt-1 leading-relaxed">
-                    Connect your core LLM (OpenAI, Anthropic, Gemini, or xAI) and research tools in under 2 minutes.
+                    Connect your core LLM (OpenAI, Anthropic, Gemini, xAI, or OpenRouter) and research tools in under 2 minutes.
                   </p>
                 </div>
                 <div className="pt-4 flex items-center gap-1.5 text-xs font-semibold text-zinc-900">
@@ -199,12 +200,13 @@ export function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingProps
             </div>
 
             {/* Provider Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
               {[
                 { id: "openai", name: "OpenAI", sub: "GPT-4o / o1" },
                 { id: "anthropic", name: "Anthropic", sub: "Claude 3.5" },
-                { id: "google", name: "Google", sub: "Gemini 1.5/2.0" },
+                { id: "google", name: "Google", sub: "Gemini 3.8" },
                 { id: "xai", name: "xAI", sub: "Grok 2" },
+                { id: "openrouter", name: "OpenRouter", sub: "Free models" },
               ].map((p) => (
                 <button
                   key={p.id}
@@ -283,13 +285,13 @@ export function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingProps
                     <select
                       value={fallbackProvider}
                       onChange={(e) => {
-                        const val = e.target.value as "openai" | "anthropic" | "google" | "xai";
+                        const val = e.target.value as "openai" | "anthropic" | "google" | "xai" | "openrouter";
                         setFallbackProvider(val);
                         setFallbackModel(modelOptions[val][0]);
                       }}
                       className="w-full px-3 py-2 rounded-xl border border-zinc-200 text-xs font-mono bg-white"
                     >
-                      {(["openai", "anthropic", "google", "xai"] as const)
+                      {(["openai", "anthropic", "google", "xai", "openrouter"] as const)
                         .filter((p) => p !== primaryProvider)
                         .map((p) => (
                           <option key={p} value={p}>
