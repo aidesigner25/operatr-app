@@ -9,6 +9,7 @@ const PROVIDERS = [
   { id: "anthropic", name: "Anthropic API Key", detail: "Claude", placeholder: "sk-ant-...", group: "llm" },
   { id: "google", name: "Google Gemini API Key", detail: "Gemini", placeholder: "AIza...", group: "llm" },
   { id: "xai", name: "xAI / Grok API Key", detail: "Grok", placeholder: "xai-...", group: "llm" },
+  { id: "openrouter", name: "OpenRouter API Key", detail: "Free models · non-sensitive tests", placeholder: "sk-or-v1-...", group: "llm" },
   { id: "tavily", name: "Tavily Search API Key", detail: "Research", placeholder: "tvly-...", group: "tools" },
   { id: "apify", name: "Apify API Token", detail: "Extraction", placeholder: "apify_api_...", group: "tools" },
 ] as const;

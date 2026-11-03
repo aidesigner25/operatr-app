@@ -1,6 +1,6 @@
 import "server-only";
 
-export const CHAT_PROVIDERS = ["openai", "anthropic", "google", "xai"] as const;
+export const CHAT_PROVIDERS = ["openai", "anthropic", "google", "xai", "openrouter"] as const;
 export type ChatProvider = (typeof CHAT_PROVIDERS)[number];
 
 export const RESPONSE_STYLES = ["concise", "medium", "deep"] as const;
@@ -20,12 +20,18 @@ export const MODEL_OPTIONS: Record<ChatProvider, { id: string; label: string }[]
     { id: "claude-haiku-4-5", label: "Claude Haiku 4.5" },
   ],
   google: [
-    { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
-    { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+    { id: "gemini-3.8-flash", label: "Gemini 3.8 Flash" },
+    { id: "gemini-3.6-flash", label: "Gemini 3.6 Flash" },
   ],
   xai: [
     { id: "grok-4", label: "Grok 4" },
     { id: "grok-3-mini", label: "Grok 3 Mini" },
+  ],
+  openrouter: [
+    { id: "nvidia/nemotron-3.5-lightning:free", label: "Nemotron 3.5 Lightning · free" },
+    { id: "nvidia/nemotron-3.5-super-vl:free", label: "Nemotron 3.5 Super VL · free" },
+    { id: "nvidia/nemotron-3-ultra-550b-a55b:free", label: "Nemotron 3 Ultra · free" },
+    { id: "openrouter/free", label: "OpenRouter free router" },
   ],
 };
 
@@ -40,9 +46,9 @@ export function isResponseStyle(value: unknown): value is ResponseStyle {
 export function isAllowedModel(provider: ChatProvider, model: unknown): model is string {
   if (typeof model !== "string") return false;
   const trimmed = model.trim();
-  if (!/^[a-zA-Z0-9._:-]{1,200}$/.test(trimmed)) return false;
+  if (!/^[a-zA-Z0-9._:/-]{1,200}$/.test(trimmed)) return false;
   return MODEL_OPTIONS[provider].some((option) => option.id === trimmed)
-    || /^custom:[a-zA-Z0-9._:-]{1,192}$/.test(trimmed);
+    || /^custom:[a-zA-Z0-9._:/-]{1,192}$/.test(trimmed);
 }
 
 export function resolvedModel(model: string): string {

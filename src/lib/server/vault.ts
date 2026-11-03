@@ -3,7 +3,7 @@ import "server-only";
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { assertCredentialVaultConfiguration, getServerEnvironment } from "@/lib/server/env";
 
-export const CREDENTIAL_PROVIDERS = ["openai", "anthropic", "google", "xai", "tavily", "apify"] as const;
+export const CREDENTIAL_PROVIDERS = ["openai", "anthropic", "google", "xai", "openrouter", "tavily", "apify"] as const;
 export type CredentialProvider = (typeof CREDENTIAL_PROVIDERS)[number];
 
 const ENCRYPTION_VERSION = 1;
