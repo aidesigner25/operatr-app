@@ -24,7 +24,7 @@ Keep the feature disabled in any shared environment until the smoke test has pas
 | Request shape | One search per opted-in response; the server accepts no browser-supplied tool options. |
 | Cost profile | Tavily `basic` depth, up to five results, one snippet per result; no raw pages, generated Tavily answer, or images. |
 | Rate | Eight searches per user per ten minutes in this POC process. |
-| Time | A Tavily request has a 15-second deadline within the existing 90-second run cap. |
+| Time | A Tavily request has a 15-second deadline. The model receives a separate generation window after research. |
 | Safety | Source excerpts are bounded, treated as untrusted data, and cannot override Operatr's instructions. |
 | Data | Credentials, raw tool payloads, and excerpts are not written to telemetry. The model may include user-visible source links in its saved answer. |
 

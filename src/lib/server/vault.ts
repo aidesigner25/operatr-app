@@ -5,6 +5,7 @@ import { assertCredentialVaultConfiguration, getServerEnvironment } from "@/lib/
 
 export const CREDENTIAL_PROVIDERS = ["openai", "anthropic", "google", "xai", "openrouter", "tavily", "apify"] as const;
 export type CredentialProvider = (typeof CREDENTIAL_PROVIDERS)[number];
+type EncryptionPurpose = CredentialProvider | "google_workspace";
 
 const ENCRYPTION_VERSION = 1;
 const ALGORITHM = "aes-256-gcm";
@@ -30,7 +31,7 @@ function keyId(): string {
   return process.env.OPERATR_KEY_ENCRYPTION_KEY_ID?.trim() || "primary-v1";
 }
 
-function aad(userId: string, provider: CredentialProvider): Buffer {
+function aad(userId: string, provider: EncryptionPurpose): Buffer {
   return Buffer.from(`operatr:v${ENCRYPTION_VERSION}:${userId}:${provider}`, "utf8");
 }
 
@@ -49,7 +50,7 @@ export function validateCredential(value: unknown): string | null {
 export function encryptCredential(
   credential: string,
   userId: string,
-  provider: CredentialProvider,
+  provider: EncryptionPurpose,
 ): EncryptedCredential {
   const iv = randomBytes(12);
   const cipher = createCipheriv(ALGORITHM, encryptionKey(), iv);
@@ -70,7 +71,7 @@ export function encryptCredential(
 export function decryptCredential(
   ciphertext: string,
   userId: string,
-  provider: CredentialProvider,
+  provider: EncryptionPurpose,
 ): string {
   const [version, storedKeyId, ivPart, tagPart, encryptedPart] = ciphertext.split(".");
   if (version !== `v${ENCRYPTION_VERSION}` || storedKeyId !== keyId() || !ivPart || !tagPart || !encryptedPart) {

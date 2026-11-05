@@ -32,7 +32,7 @@ Every request remains with the provider and model selected for the conversation.
 |---|---|
 | Context | Most recent messages only, capped at 36,000 characters before the provider call |
 | Output | Concise: 800 tokens; Standard: 2,000; Deep: 4,000 |
-| Time | Server-side 90-second maximum per run |
+| Time | Separate 120-second model generation window after research; 190-second overall run backstop |
 | Retry | At most once, only for a transient failure before any response text is streamed |
 | Fallback | No automatic model or provider fallback; cross-provider sharing requires an explicit user choice in a new conversation |
 | Trace | High-level execution status only; no hidden reasoning or credential/provider payloads |

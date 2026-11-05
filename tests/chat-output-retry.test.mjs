@@ -10,32 +10,41 @@ test("retries a no-text output limit using the same research and a bounded large
   }
   let modelCalls = 0;
   let researchCalls = 0;
+  const assessments = [];
   const calls = [];
   const store = {
     getConversation: async () => ({ data: { provider: "openrouter", model: "test", response_style: "medium" } }),
-    saveMessage: async () => ({}), listMessages: async () => ({ data: [{ role: "user", content: "Reddit opinions" }, { role: "assistant", content: "previous" }] }),
+    saveMessage: async (input) => input.role === "assistant" ? { data: [{ id: "saved-message" }] } : ({}), listMessages: async () => ({ data: [{ role: "user", content: "Reddit opinions" }, { role: "assistant", content: "previous" }] }),
     toProviderMessages: (items) => items, createAgentRun: async () => ({ data: { id: "run" } }),
     saveAgentTraceEvent: async () => ({}), finishAgentRun: async () => ({}), touchConversation: async () => ({}),
+    titleFor: () => "Initial title",
   };
   const modules = {
+    "@/lib/shared/continuation-markdown": { joinContinuationMarkdown: (segments) => segments.join("\n\n") },
+    "@/lib/shared/google-asset-intent": { requestedGoogleAsset: () => null },
+    "@/lib/server/google-export": {},
     "@/lib/server/http": { createRequestId: () => "request", jsonError: () => { throw new Error("unexpected error"); } },
+    "@/lib/shared/chat-attachment": { decodeAttachmentMessage: () => null },
+    "@/lib/shared/task-continuation": { continuationTask: (messages) => ({ isContinuation: false, prompt: messages[messages.length - 1].content, segments: [] }) },
     "@/lib/server/supabase": { getAuthenticatedRequest: async () => ({ user: { id: "user" }, accessToken: "token" }) },
     "@/lib/server/rate-limit": { allowRequest: () => true },
     "@/lib/server/chat-store": store,
-    "@/lib/server/chat-provider": { ChatRuntimeError, loadProviderCredential: async () => "key", streamProviderResponse: async function* (input) {
+    "@/lib/server/chat-provider": { ChatRuntimeError, deriveConversationTitle: () => "Fallback title", loadProviderCredential: async () => "key", streamProviderResponse: async function* (input) {
       calls.push(input); modelCalls++;
       if (modelCalls === 1) throw new ChatRuntimeError("provider_output_limit", "limit");
       yield "A grounded answer";
     } },
     "@/lib/server/feature-flags": { getFeatureFlags: () => ({ chat: true, apify: true }) },
-    "@/lib/server/agent-runtime": { AGENT_RUNTIME_TIMEOUT_MS: 90000, boundedProviderMessages: x => x, maxOutputTokensFor: () => 2000, isSafeRetryable: () => false, runStatusFor: () => "failed" },
+    "@/lib/server/agent-runtime": { AGENT_RUNTIME_TIMEOUT_MS: 190000, MODEL_RESPONSE_TIMEOUT_MS: 120000, TITLE_TIMEOUT_MS: 15000, boundedProviderMessages: x => x, maxOutputTokensFor: () => 2000, isSafeRetryable: () => false, runStatusFor: () => "failed" },
     "@/lib/server/operator-profile": { loadOperatorPreferences: async () => ({}), operatorSystemInstruction: () => "base" },
+    "@/lib/server/value-assessment": { assessValue: async (input) => { assessments.push(input); return { status: "saved" }; } },
+    "@/lib/server/research-source-list": { researchSourceSuffix: () => "" },
     "@/lib/server/tavily": {},
-    "@/lib/server/apify": { selectApifyTask: () => "reddit_signal", runApifyTask: async () => { researchCalls++; return { label: "Reddit", sources: [{ title: "post" }] }; }, apifyResearchInstruction: () => " RESEARCH" },
+    "@/lib/server/apify": { resolveApifyPrompt: (prompt) => prompt, selectApifyTask: () => "reddit_signal", runApifyTask: async () => { researchCalls++; return { label: "Reddit", sources: [{ title: "post" }] }; }, apifyResearchInstruction: () => " RESEARCH" },
   };
   const source = readFileSync(new URL("../src/app/api/chat/conversations/[conversationId]/messages/route.ts", import.meta.url), "utf8");
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  const context = { exports: {}, require: (name) => modules[name], Request, Response, ReadableStream, TextEncoder, AbortSignal, DOMException };
+  const context = { exports: {}, require: (name) => modules[name], Request, Response, ReadableStream, TextEncoder, TextDecoder, AbortSignal, DOMException };
   vm.runInNewContext(code, context);
   const request = new Request("https://localhost/test", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ content: "Reddit opinions", useApify: true }) });
   const response = await context.exports.POST(request, { params: Promise.resolve({ conversationId: "conversation" }) });
@@ -46,5 +55,10 @@ test("retries a no-text output limit using the same research and a bounded large
   assert.equal(calls[0].maxTokens, 2000);
   assert.equal(calls[1].maxTokens, 4000);
   assert.equal(calls[1].lowReasoningEffort, true);
-  assert.equal(calls[1].systemInstruction, "base RESEARCH");
+  assert.match(calls[1].systemInstruction, /Research tools are operated by Operatr/);
+  assert.match(calls[1].systemInstruction, /RESEARCH/);
+  assert.equal(assessments.length, 1);
+  assert.equal(assessments[0].messageId, "saved-message");
+  assert.equal(assessments[0].answer, "A grounded answer");
+  assert.match(assessments[0].research, /Apify sources: 1/);
 });

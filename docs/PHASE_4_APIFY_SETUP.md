@@ -35,7 +35,7 @@ For site research, an exact target page is the fastest and most reliable input: 
 |---|---|
 | Actor control | Actor IDs and input fields are server-owned. The browser cannot invoke an arbitrary actor or submit custom actor options. Site discovery examines at most five results per company and cannot become general-purpose search. |
 | Target safety | Site and LinkedIn tasks accept only public HTTPS URLs; localhost, private IPv4 ranges, credentials in URLs, and `.local` hosts are rejected. |
-| Cost and time | Every run applies fixed item and USD ceilings with an 80-second Actor cap. Operatr waits 45 seconds, reads available partial results, and requests cancellation if the Actor is still running; the Actor timeout is a backstop if cancellation fails. The remainder of the 90-second agent window is reserved for the response. |
+| Cost and time | Every run applies fixed item and USD ceilings with an 80-second Actor cap. Operatr waits 45 seconds, reads available partial results, and requests cancellation if the Actor is still running; the Actor timeout is a backstop if cancellation fails. Operatr gives the model a separate 120-second response window after research, subject to a 190-second overall run backstop. |
 | Multi-site comparisons | Up to three targeted pages use the faster HTTP crawler to reduce browser startup time. JavaScript-only pages may return incomplete content; use a single exact page to retry with browser rendering. |
 | Rate | Five Apify runs per user per ten minutes in this POC process. |
 | Free accounts | The low per-run ceilings make the user-visible opt-in viable for free-credit testing; the user still controls their Apify account and spending limits. |

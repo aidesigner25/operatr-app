@@ -27,6 +27,17 @@ export default function IntegrationsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [google, setGoogle] = useState<{ enabled: boolean; connected: boolean } | null>(null);
+  const [googleBusy, setGoogleBusy] = useState(false);
+
+  const loadGoogle = useCallback(async () => {
+    try {
+      const response = await fetch("/api/google-workspace", { cache: "no-store" });
+      const payload = await response.json() as { data?: { enabled: boolean; connected: boolean }; error?: { message?: string } };
+      if (!response.ok || !payload.data) throw new Error(payload.error?.message || "Google Workspace status could not be loaded.");
+      setGoogle(payload.data);
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Google Workspace status could not be loaded."); }
+  }, []);
 
   const loadStatus = useCallback(async () => {
     setIsLoading(true);
@@ -42,7 +53,33 @@ export default function IntegrationsPage() {
     }
   }, []);
 
-  useEffect(() => { void loadStatus(); }, [loadStatus]);
+  useEffect(() => {
+    void loadStatus();
+    void loadGoogle();
+    const url = new URL(window.location.href);
+    const result = url.searchParams.get("google");
+    if (result === "connected") setMessage("Google Workspace connected. You can export saved responses from chat.");
+    if (result === "cancelled") setMessage("Google Workspace connection was cancelled.");
+    if (result === "error") setError("Google Workspace could not be connected. Check the setup and try again.");
+    if (result) { url.searchParams.delete("google"); window.history.replaceState(null, "", url.toString()); }
+  }, [loadStatus, loadGoogle]);
+
+  const changeGoogle = async (disconnecting: boolean) => {
+    setError(""); setMessage(""); setGoogleBusy(true);
+    try {
+      const response = await fetch(disconnecting ? "/api/google-workspace" : "/api/google-workspace/connect", { method: disconnecting ? "DELETE" : "POST" });
+      const payload = await response.json() as { data?: { url?: string }; error?: { message?: string } };
+      if (!response.ok) throw new Error(payload.error?.message || "Google Workspace could not be updated.");
+      if (!disconnecting) {
+        if (!payload.data?.url) throw new Error("Google Workspace could not be connected.");
+        window.location.assign(payload.data.url);
+        return;
+      }
+      await loadGoogle();
+      setMessage("Google Workspace disconnected and its authorization revoked.");
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Google Workspace could not be updated."); }
+    finally { setGoogleBusy(false); }
+  };
 
   const saveCredentials = async () => {
     const entries = PROVIDERS.filter(({ id }) => values[id].trim()).map(({ id }) => [id, values[id].trim()] as const);
@@ -115,7 +152,7 @@ export default function IntegrationsPage() {
       {message && <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-800">{message}</p>}
       <section className="p-6 rounded-3xl bg-white border border-zinc-200/90 shadow-soft space-y-6"><div className="flex items-center gap-2.5 pb-4 border-b border-zinc-100"><Bot className="w-4 h-4 text-zinc-900" /><h2 className="text-sm font-bold text-zinc-900">Core LLM Providers</h2></div><div className="grid grid-cols-1 md:grid-cols-2 gap-4">{PROVIDERS.filter((provider) => provider.group === "llm").map(renderProvider)}</div></section>
       <section className="p-6 rounded-3xl bg-white border border-zinc-200/90 shadow-soft space-y-6"><div className="flex items-center gap-2.5 pb-4 border-b border-zinc-100"><Globe className="w-4 h-4 text-zinc-900" /><h2 className="text-sm font-bold text-zinc-900">Research & Extraction Tools</h2></div><div className="grid grid-cols-1 md:grid-cols-2 gap-4">{PROVIDERS.filter((provider) => provider.group === "tools").map(renderProvider)}</div></section>
-      <section className="p-6 rounded-3xl bg-white border border-zinc-200/90 shadow-soft space-y-5"><div className="flex items-center gap-2.5 pb-4 border-b border-zinc-100"><FileText className="w-4 h-4 text-zinc-900" /><h2 className="text-sm font-bold text-zinc-900">Google Workspace</h2></div><div className="flex items-start gap-3 rounded-2xl bg-zinc-50 border border-zinc-200/70 p-4"><Key className="w-4 h-4 text-zinc-500 mt-0.5" /><p className="text-xs leading-relaxed text-zinc-500">OAuth connections remain intentionally unavailable until the later Google integration phase. They are not represented by API-key vault records.</p></div></section>
+      <section className="p-6 rounded-3xl bg-white border border-zinc-200/90 shadow-soft space-y-5"><div className="flex items-center gap-2.5 pb-4 border-b border-zinc-100"><FileText className="w-4 h-4 text-zinc-900" /><h2 className="text-sm font-bold text-zinc-900">Google Workspace</h2></div><div className="flex flex-wrap items-start justify-between gap-4 rounded-2xl bg-zinc-50 border border-zinc-200/70 p-4"><div className="flex max-w-xl items-start gap-3"><Key className="w-4 h-4 text-zinc-500 mt-0.5 shrink-0" /><div className="space-y-1"><p className="text-xs font-bold text-zinc-900">{google === null ? "Checking connection…" : google.connected ? "Authorization saved" : !google.enabled ? "Not configured" : "Not connected"}</p><p className="text-xs leading-relaxed text-zinc-500">Export saved chat responses to new Google Docs and Sheets. Operatr requests access to files it creates or you choose to use with it. This is separate from your Gemini API key.</p></div></div>{google?.connected && google.enabled && <button type="button" disabled={googleBusy} onClick={() => void changeGoogle(false)} className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-xs font-semibold text-zinc-800 hover:border-zinc-400 disabled:opacity-50">Reconnect Google</button>}{(google?.enabled || google?.connected) && <button type="button" disabled={googleBusy} onClick={() => void changeGoogle(google!.connected)} className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-xs font-semibold text-zinc-800 hover:border-zinc-400 disabled:opacity-50">{googleBusy ? "Please wait…" : google!.connected ? "Disconnect Google" : "Connect Google"}</button>}</div></section>
       {isLoading && <p className="text-center text-[10px] font-mono uppercase tracking-wider text-zinc-400">Loading vault status…</p>}
     </div>
   </DashboardShell>;

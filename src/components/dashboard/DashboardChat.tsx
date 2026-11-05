@@ -3,7 +3,14 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, Check, Globe2, Loader2, Pause, Pencil, Plus, Send, X } from "lucide-react";
+import { continuationMarkdown } from "@/lib/shared/continuation-markdown";
+import { isContinuationRequest } from "@/lib/shared/task-continuation";
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
+import { GoogleExport } from "@/components/chat/GoogleExport";
+import { ValueEstimate } from "@/components/chat/ValueEstimate";
+import { useValueEstimates } from "@/components/chat/useValueEstimates";
+import { AttachmentPicker, UserMessage } from "@/components/chat/ChatAttachment";
+import { encodeAttachmentMessage, type ChatAttachment } from "@/lib/shared/chat-attachment";
 
 type Provider = "openai" | "anthropic" | "google" | "xai" | "openrouter";
 type ResponseStyle = "concise" | "medium" | "deep";
@@ -29,7 +36,10 @@ export function DashboardChat() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [assessmentStatuses, setAssessmentStatuses] = useState<Record<string, string>>({});
   const [prompt, setPrompt] = useState("");
+  const [attachment, setAttachment] = useState<ChatAttachment | null>(null);
+  const [attachmentReading, setAttachmentReading] = useState(false);
   const [provider, setProvider] = useState<Provider>("openai");
   const [model, setModel] = useState("gpt-4o");
   const [style, setStyle] = useState<ResponseStyle>("medium");
@@ -41,6 +51,13 @@ export function DashboardChat() {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const abortRef = useRef<AbortController | null>(null);
+  const promptRef = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => {
+    const textarea = promptRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 240)}px`;
+  }, [prompt]);
 
   const loadConversations = useCallback(async () => {
     const response = await fetch("/api/chat/conversations", { cache: "no-store" });
@@ -59,7 +76,9 @@ export function DashboardChat() {
   }, [loadConversations]);
 
   const openConversation = async (conversation: Conversation) => {
-    if (isRunning) return;
+    if (isRunning || attachmentReading) return;
+    setAttachment(null);
+    setAssessmentStatuses({});
     setError("");
     setIsLoading(true);
     try {
@@ -77,12 +96,15 @@ export function DashboardChat() {
   };
 
   const newChat = () => {
+    if (attachmentReading) return;
     abortRef.current?.abort();
     abortRef.current = null;
     setIsRunning(false);
     setActiveConversation(null);
     setMessages([]);
+    setAssessmentStatuses({});
     setPrompt("");
+    setAttachment(null);
     setError("");
     setIsEditingTitle(false);
   };
@@ -114,14 +136,16 @@ export function DashboardChat() {
 
   const send = async () => {
     const content = prompt.trim();
-    if (!content || isRunning) return;
+    if (!content || isRunning || attachmentReading) return;
+    const messageContent = attachment ? encodeAttachmentMessage(content, attachment) : content;
+    if (!messageContent) { setError("The message and attachment exceed the allowed combined size. Shorten the message or file."); return; }
     setError("");
     setPrompt("");
     setIsRunning(true);
     const controller = new AbortController();
     abortRef.current = controller;
     let conversation = activeConversation;
-    const userMessage: Message = { id: `local-user-${crypto.randomUUID()}`, role: "user", content, status: "completed", created_at: new Date().toISOString() };
+    const userMessage: Message = { id: `local-user-${crypto.randomUUID()}`, role: "user", content: messageContent, status: "completed", created_at: new Date().toISOString() };
     const assistantId = `local-assistant-${crypto.randomUUID()}`;
     try {
       if (!conversation) {
@@ -134,24 +158,31 @@ export function DashboardChat() {
       }
       const streamedConversationId = conversation.id;
       setMessages((current) => [...current, userMessage, { id: assistantId, role: "assistant", content: "", status: "streaming", created_at: new Date().toISOString() }]);
-      const response = await fetch(`/api/chat/conversations/${streamedConversationId}/messages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content, useWeb, useApify }), signal: controller.signal });
+      const response = await fetch(`/api/chat/conversations/${streamedConversationId}/messages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content, useWeb, useApify, attachment }), signal: controller.signal });
       if (!response.ok || !response.body) {
         const payload = await readJson<ApiResponse<unknown>>(response);
+        setPrompt(content);
+        setMessages((current) => current.filter((message) => message.id !== userMessage.id));
         throw new Error(payload.error?.message || "The chat response could not be started.");
       }
+      setAttachment(null);
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
       let finalStatus: Message["status"] = "completed";
       let receivedDone = false;
       let receivedText = false;
+      let savedMessageId: string | undefined;
+      let streamError: string | undefined;
       const processEvent = (raw: string) => {
         const eventName = raw.match(/^event:\s*(.+)$/m)?.[1];
         const data = raw.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n");
         if (!data) return;
-        const payload = JSON.parse(data) as { text?: string; message?: string; status?: Message["status"]; title?: string };
+        const payload = JSON.parse(data) as { text?: string; message?: string; status?: Message["status"]; title?: string; messageId?: string; outcome?: string };
         if (eventName === "delta" && payload.text) { receivedText = true; appendDelta(assistantId, payload.text); }
-        if (eventName === "error") throw new Error(payload.message || "The provider could not complete this request.");
+        if (eventName === "saved") savedMessageId = payload.messageId;
+        if (eventName === "assessment" && payload.messageId && payload.outcome) { const id = payload.messageId; const outcome = payload.outcome; setAssessmentStatuses((current) => ({ ...current, [id]: outcome })); }
+        if (eventName === "error") streamError = payload.message || "The provider could not complete this request.";
         if (eventName === "title" && payload.title) {
           const title = payload.title;
           setActiveConversation((current) => !current || current.id !== streamedConversationId ? current : { ...current, title });
@@ -168,9 +199,11 @@ export function DashboardChat() {
         if (done) break;
       }
       if (!receivedDone) throw new Error("The response connection ended unexpectedly. Please try again.");
-      if (!receivedText) throw new Error("The model returned no response. Please try again or choose another model.");
-      setMessages((current) => current.map((message) => message.id === assistantId ? { ...message, status: finalStatus } : message).filter((message) => message.id !== assistantId || message.content));
+      if (!receivedText) throw new Error(streamError || "The model returned no response. Please try again or choose another model.");
+      if (streamError) setError(streamError);
+      setMessages((current) => current.map((message) => message.id === assistantId ? { ...message, id: savedMessageId || message.id, status: finalStatus } : message).filter((message) => message.id !== assistantId || message.content));
       await loadConversations();
+      window.dispatchEvent(new Event("operatr:value-updated"));
     } catch (caught) {
       setMessages((current) => current.map((message) => message.id === assistantId ? { ...message, status: "cancelled" as const } : message).filter((message) => message.id !== assistantId || message.content));
       if (!(caught instanceof DOMException && caught.name === "AbortError")) setError(caught instanceof Error ? caught.message : "Chat could not be completed.");
@@ -191,6 +224,8 @@ export function DashboardChat() {
     } catch (caught) { setError(caught instanceof Error ? caught.message : "The conversation title could not be updated."); }
   };
 
+  const valueRevision = messages.filter((message) => message.role === "assistant" && message.status === "completed" && !message.id.startsWith("local-")).map((message) => message.id).join(",");
+  const valueEstimates = useValueEstimates(activeConversation?.id, valueRevision);
   const currentProvider = activeConversation?.provider || provider;
   const currentModel = activeConversation?.model || model;
   const currentStyle = activeConversation?.response_style || style;
@@ -204,7 +239,7 @@ export function DashboardChat() {
       <div className="flex flex-wrap items-center gap-2"><select value={activeConversation?.id || ""} onChange={(event) => { const conversation = conversations.find((item) => item.id === event.target.value); if (conversation) void openConversation(conversation); }} disabled={isRunning || isLoading} className="max-w-48 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs text-zinc-700 outline-none focus:border-zinc-900"><option value="">Recent conversations</option>{conversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select><button type="button" onClick={newChat} className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-zinc-700 hover:border-zinc-900 hover:text-zinc-900"><Plus className="h-3.5 w-3.5" />New</button>{activeConversation && <Link href="/agent" className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-zinc-600 hover:bg-zinc-200 hover:text-zinc-900">Open workspace</Link>}</div>
     </div>
     {error && <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-800"><AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{error}</div>}
-    <div className="max-h-[380px] min-h-48 space-y-4 overflow-y-auto pr-2">{isLoading ? <div className="flex items-center gap-2 text-xs text-zinc-500"><Loader2 className="h-4 w-4 animate-spin" />Loading conversations…</div> : messages.length === 0 ? <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 p-7 text-center text-xs text-zinc-500">Start a private conversation. Use Live web for Tavily sources, or turn on Apify research and Operatr will choose a bounded source.</div> : messages.map((message) => <div key={message.id} className={`flex gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`}>{message.role === "assistant" && <span className="mt-0.5 h-8 w-8 shrink-0 overflow-hidden rounded-xl bg-zinc-900"><img src="/images/operatr_icon.png" alt="Operatr" className="h-full w-full object-cover scale-[1.06]" /></span>}<div className={`max-w-xl rounded-2xl p-3.5 text-xs leading-relaxed ${message.role === "user" ? "bg-zinc-900 font-medium text-white" : "border border-zinc-200 bg-zinc-50 text-zinc-800"}`}>{message.content ? message.role === "assistant" ? <ChatMarkdown content={message.content} /> : <p className="whitespace-pre-wrap">{message.content}</p> : <span className="inline-flex items-center gap-2 text-zinc-500"><Loader2 className="h-3.5 w-3.5 animate-spin" />Thinking…</span>}{message.status === "cancelled" && <p className="mt-2 font-mono text-[10px] text-zinc-500">Response stopped</p>}</div></div>)}</div>
+    <div className="max-h-[380px] min-h-48 space-y-4 overflow-y-auto pr-2">{isLoading ? <div className="flex items-center gap-2 text-xs text-zinc-500"><Loader2 className="h-4 w-4 animate-spin" />Loading conversations…</div> : messages.length === 0 ? <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 p-7 text-center text-xs text-zinc-500">Start a private conversation. Use Live web for Tavily sources, or turn on Apify research and Operatr will choose a bounded source.</div> : messages.map((message, index) => <div key={message.id} className={`flex min-w-0 gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`}>{message.role === "assistant" && <span className="mt-0.5 h-8 w-8 shrink-0 overflow-hidden rounded-xl bg-zinc-900"><img src="/images/operatr_icon.png" alt="Operatr" className="h-full w-full object-cover scale-[1.06]" /></span>}<div className={`min-w-0 max-w-full sm:max-w-xl rounded-2xl p-3.5 text-xs leading-relaxed ${message.role === "user" ? "bg-zinc-900 font-medium text-white" : "border border-zinc-200 bg-zinc-50 text-zinc-800"}`}>{message.content ? message.role === "assistant" ? <ChatMarkdown content={index >= 2 && messages[index - 1].role === "user" && isContinuationRequest(messages[index - 1].content) && messages[index - 2].role === "assistant" && messages[index - 2].status === "cancelled" ? continuationMarkdown(messages[index - 2].content, message.content) : message.content} /> : <UserMessage content={message.content} /> : <span className="inline-flex items-center gap-2 text-zinc-500"><Loader2 className="h-3.5 w-3.5 animate-spin" />Thinking…</span>}{message.role === "assistant" && message.status === "completed" && !message.id.startsWith("local-") && <GoogleExport key={message.id} messageId={message.id} />}{message.role === "assistant" && message.status === "completed" && !message.id.startsWith("local-") && <ValueEstimate key={`value-${message.id}`} messageId={message.id} estimate={valueEstimates.estimates[message.id]} state={valueEstimates.state} assessmentStatus={assessmentStatuses[message.id]} />}{message.status === "cancelled" && <p className="mt-2 font-mono text-[10px] text-zinc-500">Response stopped</p>}</div></div>)}</div>
     <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-2 focus-within:border-zinc-900">
       <p className="px-1 pb-2 font-mono text-[9px] uppercase tracking-[0.08em] text-zinc-400">Selection applies to the next response</p>
       <div className="flex flex-wrap items-center gap-1 border-b border-zinc-200 px-1 pb-2">
@@ -215,9 +250,10 @@ export function DashboardChat() {
         <button type="button" onClick={() => setUseApify((enabled) => !enabled)} disabled={isRunning} aria-pressed={useApify} className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-semibold disabled:opacity-60 ${useApify ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-900"}`}><Globe2 className="h-3 w-3" />{useApify ? "Apify · on" : "Apify research"}</button>
         {isRunning && <button type="button" onClick={() => abortRef.current?.abort()} className="ml-auto inline-flex items-center gap-1 rounded-lg bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900"><Pause className="h-3.5 w-3.5" />Stop</button>}
       </div>
+      <div className="px-1 pt-2"><AttachmentPicker attachment={attachment} onChange={setAttachment} onError={setError} onReadingChange={setAttachmentReading} disabled={isRunning} /></div>
       <div className="mt-2 flex items-center gap-2">
-        <textarea rows={1} value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} placeholder={researchPlaceholder} disabled={isRunning} className="min-h-9 flex-1 resize-none bg-transparent px-2 py-1.5 text-xs text-zinc-900 outline-none placeholder:text-zinc-400" />
-        <button type="button" onClick={() => void send()} disabled={!prompt.trim() || isRunning} className="rounded-xl bg-zinc-900 p-2.5 text-white enabled:hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"><Send className="h-4 w-4" /></button>
+        <textarea ref={promptRef} rows={1} value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} placeholder={researchPlaceholder} disabled={isRunning} className="min-h-9 flex-1 resize-none overflow-y-auto bg-transparent px-2 py-1.5 text-xs text-zinc-900 outline-none placeholder:text-zinc-400" />
+        <button type="button" onClick={() => void send()} disabled={!prompt.trim() || isRunning || attachmentReading} className="rounded-xl bg-zinc-900 p-2.5 text-white enabled:hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"><Send className="h-4 w-4" /></button>
       </div>
     </div>
   </div>;

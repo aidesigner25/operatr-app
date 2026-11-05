@@ -1,8 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertCircle, Check, FileText, Globe2, Loader2, Paperclip, Pause, Pencil, Plus, Send, Sparkles, X } from "lucide-react";
+import { AlertCircle, ArrowDown, Check, FileText, Globe2, Loader2, Pause, Pencil, Plus, Send, X } from "lucide-react";
+import { continuationMarkdown } from "@/lib/shared/continuation-markdown";
+import { isContinuationRequest } from "@/lib/shared/task-continuation";
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
+import { GoogleExport } from "@/components/chat/GoogleExport";
+import { ValueEstimate } from "@/components/chat/ValueEstimate";
+import { useValueEstimates } from "@/components/chat/useValueEstimates";
+import { AttachmentPicker, UserMessage } from "@/components/chat/ChatAttachment";
+import { encodeAttachmentMessage, type ChatAttachment } from "@/lib/shared/chat-attachment";
 
 type Provider = "openai" | "anthropic" | "google" | "xai" | "openrouter";
 type ResponseStyle = "concise" | "medium" | "deep";
@@ -35,7 +42,10 @@ export function AgentWorkspace() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [assessmentStatuses, setAssessmentStatuses] = useState<Record<string, string>>({});
   const [prompt, setPrompt] = useState("");
+  const [attachment, setAttachment] = useState<ChatAttachment | null>(null);
+  const [attachmentReading, setAttachmentReading] = useState(false);
   const [provider, setProvider] = useState<Provider>("openai");
   const [model, setModel] = useState("gpt-4o");
   const [customModel, setCustomModel] = useState("");
@@ -50,6 +60,27 @@ export function AgentWorkspace() {
   const [useWeb, setUseWeb] = useState(false);
   const [useApify, setUseApify] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const conversationScrollRef = useRef<HTMLDivElement | null>(null);
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+  const updateJumpToLatest = useCallback(() => {
+    const area = conversationScrollRef.current;
+    setShowJumpToLatest(Boolean(area && area.scrollHeight - area.clientHeight - area.scrollTop > 80));
+  }, []);
+  useEffect(() => { updateJumpToLatest(); }, [messages, isLoading, updateJumpToLatest]);
+  useEffect(() => {
+    const area = conversationScrollRef.current;
+    if (!area || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(updateJumpToLatest);
+    observer.observe(area);
+    return () => observer.disconnect();
+  }, [updateJumpToLatest]);
+  const promptRef = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => {
+    const textarea = promptRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 240)}px`;
+  }, [prompt]);
 
   const loadConversations = useCallback(async () => {
     const response = await fetch("/api/chat/conversations", { cache: "no-store" });
@@ -67,7 +98,9 @@ export function AgentWorkspace() {
   }, [loadConversations]);
 
   const openConversation = async (conversation: Conversation) => {
-    if (isRunning) return;
+    if (isRunning || attachmentReading) return;
+    setAttachment(null);
+    setAssessmentStatuses({});
     setError("");
     setRunTrace("");
     setIsLoading(true);
@@ -88,12 +121,15 @@ export function AgentWorkspace() {
   };
 
   const newChat = () => {
+    if (attachmentReading) return;
     abortRef.current?.abort();
     abortRef.current = null;
     setIsRunning(false);
     setActiveConversation(null);
     setMessages([]);
+    setAssessmentStatuses({});
     setPrompt("");
+    setAttachment(null);
     setError("");
     setIsEditingTitle(false);
     setTitleDraft("");
@@ -168,7 +204,9 @@ export function AgentWorkspace() {
 
   const send = async () => {
     const content = prompt.trim();
-    if (!content || isRunning) return;
+    if (!content || isRunning || attachmentReading) return;
+    const messageContent = attachment ? encodeAttachmentMessage(content, attachment) : content;
+    if (!messageContent) { setError("The message and attachment exceed the allowed combined size. Shorten the message or file."); return; }
     setError("");
     setPrompt("");
     setIsRunning(true);
@@ -177,7 +215,7 @@ export function AgentWorkspace() {
     abortRef.current = controller;
     const selectedModel = model === "__custom" ? `custom:${customModel.trim()}` : model;
     let conversation = activeConversation;
-    const userMessage: Message = { id: `local-user-${crypto.randomUUID()}`, role: "user", content, status: "completed", created_at: new Date().toISOString() };
+    const userMessage: Message = { id: `local-user-${crypto.randomUUID()}`, role: "user", content: messageContent, status: "completed", created_at: new Date().toISOString() };
     const assistantId = `local-assistant-${crypto.randomUUID()}`;
 
     try {
@@ -200,28 +238,35 @@ export function AgentWorkspace() {
       const response = await fetch(`/api/chat/conversations/${streamedConversationId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, useWeb, useApify }),
+        body: JSON.stringify({ content, useWeb, useApify, attachment }),
         signal: controller.signal,
       });
       if (!response.ok || !response.body) {
         const payload = await readJson<ApiResponse<unknown>>(response);
+        setPrompt(content);
+        setMessages((current) => current.filter((message) => message.id !== userMessage.id));
         throw new Error(payload.error?.message || "The chat response could not be started.");
       }
 
+      setAttachment(null);
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
       let finalStatus: Message["status"] = "completed";
       let receivedDone = false;
       let receivedText = false;
+      let savedMessageId: string | undefined;
+      let streamError: string | undefined;
       const processEvent = (raw: string) => {
         const eventName = raw.match(/^event:\s*(.+)$/m)?.[1];
         const data = raw.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n");
         if (!data) return;
-        const payload = JSON.parse(data) as { text?: string; message?: string; status?: Message["status"]; title?: string; detail?: string };
+        const payload = JSON.parse(data) as { text?: string; message?: string; status?: Message["status"]; title?: string; detail?: string; messageId?: string; outcome?: string };
         if (eventName === "delta" && payload.text) { receivedText = true; appendDelta(assistantId, payload.text); }
         if (eventName === "trace" && payload.detail) setRunTrace(payload.detail);
-        if (eventName === "error") throw new Error(payload.message || "The provider could not complete this request.");
+        if (eventName === "saved") savedMessageId = payload.messageId;
+        if (eventName === "assessment" && payload.messageId && payload.outcome) { const id = payload.messageId; const outcome = payload.outcome; setAssessmentStatuses((current) => ({ ...current, [id]: outcome })); }
+        if (eventName === "error") streamError = payload.message || "The provider could not complete this request.";
         if (eventName === "title" && payload.title) {
           const title = payload.title;
           setActiveConversation((current) => !current || current.id !== streamedConversationId ? current : { ...current, title });
@@ -238,9 +283,11 @@ export function AgentWorkspace() {
         if (done) break;
       }
       if (!receivedDone) throw new Error("The response connection ended unexpectedly. Please try again.");
-      if (!receivedText) throw new Error("The model returned no response. Please try again or choose another model.");
-      setMessages((current) => current.map((message) => message.id === assistantId ? { ...message, status: finalStatus } : message).filter((message) => message.id !== assistantId || message.content));
+      if (!receivedText) throw new Error(streamError || "The model returned no response. Please try again or choose another model.");
+      if (streamError) setError(streamError);
+      setMessages((current) => current.map((message) => message.id === assistantId ? { ...message, id: savedMessageId || message.id, status: finalStatus } : message).filter((message) => message.id !== assistantId || message.content));
       await loadConversations();
+      window.dispatchEvent(new Event("operatr:value-updated"));
     } catch (caught) {
       setMessages((current) => current.map((message) => message.id === assistantId ? { ...message, status: "cancelled" as const } : message).filter((message) => message.id !== assistantId || message.content));
       if (!(caught instanceof DOMException && caught.name === "AbortError")) setError(caught instanceof Error ? caught.message : "Chat could not be completed.");
@@ -253,41 +300,46 @@ export function AgentWorkspace() {
 
   const cancel = () => abortRef.current?.abort();
   const conversationTitle = activeConversation?.title || "New conversation";
+  const valueRevision = messages.filter((message) => message.role === "assistant" && message.status === "completed" && !message.id.startsWith("local-")).map((message) => message.id).join(",");
+  const valueEstimates = useValueEstimates(activeConversation?.id, valueRevision);
   const currentProvider = activeConversation?.provider || provider;
   const currentModel = activeConversation?.model || (model === "__custom" ? customModel : model);
   const researchPlaceholder = useApify
     ? "Ask about a company’s website, LinkedIn posts, or Reddit opinions…"
     : "Ask Operatr to think, decide, or create…";
 
-  return <div className="agent-workspace grid min-h-[calc(100vh-4rem)] grid-cols-1 overflow-hidden rounded-[1.8rem] border border-[var(--line)] bg-[var(--paper)] shadow-soft-lg lg:grid-cols-[15.5rem_minmax(0,1fr)]">
-    <aside className="border-b border-[var(--line)] bg-[var(--canvas)] p-4 lg:border-b-0 lg:border-r">
+  return <div className="agent-workspace grid min-h-[42rem] grid-cols-1 overflow-hidden lg:h-[calc(100dvh-4rem)] lg:min-h-[30rem] rounded-[1.8rem] border border-[var(--line)] bg-[var(--paper)] shadow-soft-lg lg:grid-cols-[15.5rem_minmax(0,1fr)]">
+    <aside className="border-b border-[var(--line)] bg-[var(--canvas)] p-4 lg:flex lg:min-h-0 lg:flex-col lg:border-b-0 lg:border-r">
       <button type="button" onClick={newChat} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--ink)] px-3 py-2.5 text-xs font-semibold text-[var(--paper)] transition-transform hover:-translate-y-0.5"><Plus className="w-3.5 h-3.5" /> New chat</button>
       <p className="mt-6 px-2 font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--tan)]">Recent conversations</p>
-      <div className="mt-2 flex gap-1 overflow-x-auto pb-1 lg:block lg:space-y-1 lg:overflow-visible">
+      <div className="mt-2 flex gap-1 overflow-x-auto pb-1 lg:min-h-0 lg:flex-1 lg:flex-col lg:space-y-1 lg:overflow-x-hidden lg:overflow-y-auto">
         {conversations.map((conversation) => <button type="button" key={conversation.id} onClick={() => void openConversation(conversation)} className={`min-w-[12rem] rounded-xl px-3 py-2.5 text-left text-xs transition-colors lg:min-w-0 lg:w-full ${conversation.id === activeConversation?.id ? "bg-[var(--paper)] text-[var(--ink)] shadow-sm" : "text-[var(--muted-ink)] hover:bg-[rgba(255,253,247,0.7)] hover:text-[var(--ink)]"}`}><span className="block truncate font-medium">{conversation.title}</span><span className="mt-0.5 block font-mono text-[9px] opacity-60">{relativeDate(conversation.updated_at)}</span></button>)}
         {!isLoading && conversations.length === 0 && <p className="px-2 py-3 text-xs leading-relaxed text-[var(--muted-ink)]">Your secure conversation history will appear here.</p>}
       </div>
     </aside>
 
-    <section className="flex min-h-[42rem] flex-col">
+    <section className="flex min-h-[42rem] min-w-0 flex-col lg:min-h-0">
       <header className="relative overflow-hidden border-b border-[rgba(249,247,240,0.16)] bg-[var(--ink)] px-5 py-4 text-[var(--paper)] sm:px-6">
         <div className="absolute inset-0 opacity-30 [background-image:linear-gradient(rgba(255,253,247,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(255,253,247,0.1)_1px,transparent_1px)] [background-size:32px_32px]" />
         <div className="relative flex items-center justify-between gap-3"><div className="min-w-0"><p className="font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--tan-light)]">Private chat</p>{isEditingTitle ? <div className="mt-1 flex max-w-xl items-center gap-2"><input autoFocus value={titleDraft} maxLength={160} onChange={(event) => setTitleDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void saveTitle(); if (event.key === "Escape") setIsEditingTitle(false); }} className="w-full rounded-lg border border-[rgba(255,253,247,0.35)] bg-[rgba(255,253,247,0.1)] px-2 py-1 font-display text-xl text-[var(--paper)] outline-none" /><button type="button" onClick={() => void saveTitle()} disabled={isSavingTitle} className="rounded-lg p-1.5 hover:bg-white/10" aria-label="Save title"><Check className="h-4 w-4" /></button><button type="button" onClick={() => setIsEditingTitle(false)} className="rounded-lg p-1.5 hover:bg-white/10" aria-label="Cancel title edit"><X className="h-4 w-4" /></button></div> : <div className="flex items-center gap-2"><h1 className="truncate font-display text-2xl tracking-[-0.035em]">{conversationTitle}</h1>{activeConversation && <button type="button" onClick={beginTitleEdit} className="rounded-lg p-1.5 text-[var(--tan-light)] hover:bg-white/10 hover:text-[var(--paper)]" aria-label="Edit conversation title"><Pencil className="h-3.5 w-3.5" /></button>}</div>}</div>{isRunning && <button type="button" onClick={cancel} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[var(--tan-wash)] px-3 py-1.5 text-xs font-semibold text-[var(--ink)]"><Pause className="w-3.5 h-3.5" />Stop</button>}</div>
       </header>
 
-      <div className="flex-1 space-y-5 overflow-y-auto bg-[var(--paper)] p-5 sm:p-7 [background-image:radial-gradient(rgba(87,80,69,0.08)_0.7px,transparent_0.7px)] [background-size:18px_18px]">
+      <div className="relative flex min-h-0 flex-1 flex-col">
+      <div ref={conversationScrollRef} onScroll={updateJumpToLatest} className="min-h-0 flex-1 space-y-5 overflow-y-auto bg-[var(--paper)] p-5 sm:p-7 [background-image:radial-gradient(rgba(87,80,69,0.08)_0.7px,transparent_0.7px)] [background-size:18px_18px]">
         <div className="mx-auto max-w-3xl space-y-5">
           <div className="rounded-xl border border-[var(--line)] bg-[rgba(235,229,218,0.54)] px-3 py-2 text-center font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--muted-ink)]">{activeConversation ? `${providerLabel[activeConversation.provider]} · ${activeConversation.model} · ${activeConversation.response_style} · applies to the next response` : "Choose a provider and begin a private conversation"}</div>
-          {isLoading ? <div className="flex items-center gap-3 text-xs text-[var(--muted-ink)]"><Loader2 className="h-4 w-4 animate-spin" />Loading conversations…</div> : messages.length === 0 ? <div className="rounded-2xl border border-dashed border-[var(--line)] bg-[rgba(255,253,247,0.6)] p-7 text-center"><Sparkles className="mx-auto h-5 w-5 text-[var(--tan)]" /><p className="mt-3 text-sm font-medium">Ready when you are.</p><p className="mt-1 text-xs leading-relaxed text-[var(--muted-ink)]">Use Live web for Tavily sources, or turn on Apify research and Operatr will choose a bounded source.</p></div> : messages.map((message) => <div key={message.id} className={`flex gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`}>{message.role === "assistant" && <span className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[var(--ink)]"><img src="/images/operatr_icon.png" alt="Operatr" className="h-full w-full object-cover scale-[1.06]" /></span>}<div className={`max-w-[88%] rounded-2xl p-4 text-sm leading-relaxed shadow-sm ${message.role === "user" ? "rounded-tr-sm bg-[var(--ink)] text-[var(--paper)]" : "rounded-tl-sm border border-[var(--line)] bg-[var(--canvas)] text-[var(--ink)]"}`}>{message.content ? message.role === "assistant" ? <ChatMarkdown content={message.content} /> : <p className="whitespace-pre-wrap">{message.content}</p> : <span className="inline-flex items-center gap-2 font-mono text-xs text-[var(--muted-ink)]"><Loader2 className="h-3.5 w-3.5 animate-spin" />{runTrace || "Preparing response"}</span>}{message.role === "assistant" && message.status === "completed" && <div className="mt-3 flex items-center gap-2 border-t border-[var(--line)] pt-3 font-mono text-[10px] text-[var(--muted-ink)]"><Check className="w-3.5 h-3.5 text-[#748260]" />Private response saved</div>}{message.status === "cancelled" && <p className="mt-2 text-[10px] font-mono text-[var(--muted-ink)]">Response stopped</p>}</div></div>)}
+          {isLoading ? <div className="flex items-center gap-3 text-xs text-[var(--muted-ink)]"><Loader2 className="h-4 w-4 animate-spin" />Loading conversations…</div> : messages.length === 0 ? <div className="rounded-2xl border border-dashed border-[var(--line)] bg-[rgba(255,253,247,0.6)] p-7 text-center"><img src="/images/operatr-dark.png" alt="" className="mx-auto h-24 w-24 object-contain" /><p className="mt-1 font-display text-2xl tracking-[-0.03em]">Ready when you are.</p><p className="mt-1 text-xs leading-relaxed text-[var(--muted-ink)]">Use Live web for Tavily sources, or turn on Apify research and Operatr will choose a bounded source.</p></div> : messages.map((message, index) => <div key={message.id} className={`flex min-w-0 gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`}>{message.role === "assistant" && <span className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[var(--ink)]"><img src="/images/operatr_icon.png" alt="Operatr" className="h-full w-full object-cover scale-[1.06]" /></span>}<div className={`min-w-0 max-w-[88%] rounded-2xl p-4 text-sm leading-relaxed shadow-sm ${message.role === "user" ? "rounded-tr-sm bg-[var(--ink)] text-[var(--paper)]" : "rounded-tl-sm border border-[var(--line)] bg-[var(--canvas)] text-[var(--ink)]"}`}>{message.content ? message.role === "assistant" ? <ChatMarkdown content={index >= 2 && messages[index - 1].role === "user" && isContinuationRequest(messages[index - 1].content) && messages[index - 2].role === "assistant" && messages[index - 2].status === "cancelled" ? continuationMarkdown(messages[index - 2].content, message.content) : message.content} /> : <UserMessage content={message.content} /> : <span className="inline-flex items-center gap-2 font-mono text-xs text-[var(--muted-ink)]"><Loader2 className="h-3.5 w-3.5 animate-spin" />{runTrace || "Preparing response"}</span>}{message.role === "assistant" && message.status === "completed" && <div className="mt-3 flex items-center gap-2 border-t border-[var(--line)] pt-3 font-mono text-[10px] text-[var(--muted-ink)]"><Check className="w-3.5 h-3.5 text-[#748260]" />{message.id.startsWith("local-") ? "Response complete" : "Private response saved"}</div>}{message.role === "assistant" && message.status === "completed" && !message.id.startsWith("local-") && <GoogleExport key={message.id} messageId={message.id} />}{message.role === "assistant" && message.status === "completed" && !message.id.startsWith("local-") && <ValueEstimate key={`value-${message.id}`} messageId={message.id} estimate={valueEstimates.estimates[message.id]} state={valueEstimates.state} assessmentStatus={assessmentStatuses[message.id]} />}{message.status === "cancelled" && <p className="mt-2 text-[10px] font-mono text-[var(--muted-ink)]">Response stopped</p>}</div></div>)}
         </div>
+      </div>
+      {showJumpToLatest && <button type="button" onClick={() => conversationScrollRef.current?.scrollTo({ top: conversationScrollRef.current.scrollHeight, behavior: "smooth" })} aria-label="Jump to latest message" className="absolute bottom-4 right-4 inline-flex items-center gap-1.5 rounded-full border border-[var(--line)] bg-[var(--paper)] px-3 py-2 text-xs font-semibold text-[var(--ink)] shadow-soft transition hover:border-[var(--tan)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ink)]"><ArrowDown className="h-3.5 w-3.5" /> Latest</button>}
       </div>
 
       <footer className="border-t border-[var(--line)] bg-[var(--paper)] p-4 sm:p-5">
         <div className="mx-auto max-w-3xl">
           {error && <div role="alert" className="mb-3 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-800"><AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{error}</div>}
           <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[9px] uppercase tracking-[0.08em] text-[var(--muted-ink)]">
-            <span className="flex items-center gap-1.5"><FileText className="h-3 w-3" />File uploads are not enabled yet</span>
-            <span>90s run limit</span><span>One pre-response retry</span><span>Provider change shares chat context</span>
+            <span className="flex items-center gap-1.5"><FileText className="h-3 w-3" />PDF · TXT · MD · CSV · JSON</span>
+            <span>Bounded research and response windows</span><span>One pre-response retry</span><span>Provider change shares chat context</span>
           </div>
           <div className="rounded-2xl border border-[var(--line)] bg-[var(--canvas)] p-2 focus-within:border-[var(--tan)]">
             <div className="flex flex-wrap items-center gap-1 border-b border-[var(--line)] px-1 pb-2">
@@ -298,10 +350,10 @@ export function AgentWorkspace() {
               <button type="button" onClick={() => setUseWeb((enabled) => !enabled)} disabled={isRunning} aria-pressed={useWeb} className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-semibold transition-colors disabled:opacity-60 ${useWeb ? "border-[#748260] bg-[#e6eadf] text-[#526448]" : "border-[var(--line)] bg-[var(--paper)] text-[var(--muted-ink)] hover:border-[var(--tan)]"}`}><Globe2 className="h-3 w-3" />{useWeb ? "Live web · on" : "Live web"}</button>
               <button type="button" onClick={() => setUseApify((enabled) => !enabled)} disabled={isRunning} aria-pressed={useApify} className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-semibold transition-colors disabled:opacity-60 ${useApify ? "border-[#748260] bg-[#e6eadf] text-[#526448]" : "border-[var(--line)] bg-[var(--paper)] text-[var(--muted-ink)] hover:border-[var(--tan)]"}`}><Globe2 className="h-3 w-3" />{useApify ? "Apify · on" : "Apify research"}</button>
             </div>
+            <div className="px-1 pt-2"><AttachmentPicker attachment={attachment} onChange={setAttachment} onError={setError} onReadingChange={setAttachmentReading} disabled={isRunning} /></div>
             <div className="mt-2 flex items-center gap-2">
-              <button type="button" disabled title="File uploads are intentionally deferred" className="cursor-not-allowed rounded-xl p-2.5 text-[var(--line)]"><Paperclip className="w-4 h-4" /></button>
-              <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} rows={1} placeholder={researchPlaceholder} className="min-h-10 min-w-0 flex-1 resize-none bg-transparent px-1 py-2 text-sm text-[var(--ink)] outline-none placeholder:text-[var(--muted-ink)]" disabled={isRunning} />
-              <button type="button" onClick={() => void send()} disabled={!prompt.trim() || isRunning || (model === "__custom" && !customModel.trim())} className="rounded-xl bg-[var(--ink)] p-2.5 text-[var(--paper)] transition-transform enabled:hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-40"><Send className="w-4 h-4" /></button>
+              <textarea ref={promptRef} value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} rows={1} placeholder={researchPlaceholder} className="min-h-10 min-w-0 flex-1 resize-none overflow-y-auto bg-transparent px-1 py-2 text-sm text-[var(--ink)] outline-none placeholder:text-[var(--muted-ink)]" disabled={isRunning} />
+              <button type="button" onClick={() => void send()} disabled={!prompt.trim() || isRunning || attachmentReading || (model === "__custom" && !customModel.trim())} className="rounded-xl bg-[var(--ink)] p-2.5 text-[var(--paper)] transition-transform enabled:hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-40"><Send className="w-4 h-4" /></button>
             </div>
           </div>
         </div>
