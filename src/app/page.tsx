@@ -28,8 +28,8 @@ export default function LandingPage() {
       {/* HERO SECTION */}
       <section id="vision" className="relative min-h-[92vh] flex flex-col justify-between items-center px-5 sm:px-6 pt-28 sm:pt-32 pb-10 overflow-hidden">
         <div className="hero-wash absolute inset-0 pointer-events-none" />
-        <div className="hero-contrast-field absolute right-[-7rem] top-24 h-[31rem] w-[min(48rem,72vw)] rounded-[3rem] pointer-events-none" />
-        <div className="absolute right-0 top-16 h-[36rem] w-[min(58rem,80vw)] opacity-80 pointer-events-none"><AmbientSignalField /></div>
+        <div className="hero-contrast-field absolute hidden lg:block right-[-7rem] top-24 h-[31rem] w-[min(48rem,72vw)] rounded-[3rem] pointer-events-none" />
+        <div className="absolute hidden lg:block right-0 top-16 h-[36rem] w-[min(58rem,80vw)] opacity-80 pointer-events-none"><AmbientSignalField /></div>
 
         <div className="relative z-10 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16 items-center my-auto">
           <div className="space-y-6 text-left">

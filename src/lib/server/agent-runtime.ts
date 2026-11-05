@@ -3,7 +3,11 @@ import "server-only";
 import type { ChatMessage, ResponseStyle } from "@/lib/server/chat-types";
 import { ChatRuntimeError } from "@/lib/server/chat-provider";
 
-export const AGENT_RUNTIME_TIMEOUT_MS = 90_000;
+// Research has its own tool limits; generation gets a fresh window afterward.
+// The overall cap remains a backstop for the interactive run.
+export const AGENT_RUNTIME_TIMEOUT_MS = 190_000;
+export const MODEL_RESPONSE_TIMEOUT_MS = 120_000;
+export const TITLE_TIMEOUT_MS = 15_000;
 export const AGENT_RUNTIME_CONTEXT_CHAR_LIMIT = 36_000;
 
 export type AgentRunStatus = "running" | "completed" | "cancelled" | "failed" | "timed_out";

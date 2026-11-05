@@ -67,3 +67,34 @@ test("uses a direct Reddit URL as an actor target", async () => {
   assert.equal(started().input.startUrls[0].url, "https://www.reddit.com/r/ChatGPT/");
   assert.equal(started().input.maxPostsPerCommunity, 15);
 });
+
+test("prefers the Reddit permalink and reconstructs a post link only from a valid ID", async () => {
+  const { api } = runtime([
+    { title: "Linked article", text: "A discussion", url: "https://news.example/article", permalink: "/r/example/comments/abc123/linked_article/" },
+    { title: "Another post", text: "More discussion", id: "t3_def456" },
+    { title: "No direct link", text: "A comment", id: "bad/id", url: "https://news.example/article" },
+  ]);
+  const result = await api.runApifyTask({ task: "reddit_signal", prompt: "What do people think about OpenAI pricing?", credential: "test", signal: AbortSignal.timeout(5000) });
+  assert.equal(result.sources[0].url, "https://www.reddit.com/r/example/comments/abc123/linked_article/");
+  assert.equal(result.sources[1].url, "https://www.reddit.com/comments/def456/");
+  assert.equal(result.sources[2].url, undefined);
+});
+
+test("uses both explicit LinkedIn and contextual company targets for follow-ups", async () => {
+  const { api, started } = runtime();
+  const original = "Can you take a look at what Apple's recent posting activity has been so that we can run a strategic ideation report?";
+  assert.equal(api.selectApifyTask(original), "linkedin_company");
+  const followup = api.resolveApifyPrompt("Can you use linkedin to gain intel on their recent posting activity?", [original]);
+  assert.equal(api.selectApifyTask(followup), "linkedin_company");
+  await api.runApifyTask({ task: "linkedin_company", prompt: followup, credential: "test", signal: AbortSignal.timeout(5000) });
+  assert.equal(started().input.targets[0], "Apple");
+});
+
+test("a same-report follow-up targets the newly named company instead of the previous one", async () => {
+  const { api, started } = runtime();
+  const prompt = "Excellent, could you please make me a doc conducting the same report, with the same linkedin scan, outlook, and key investment factors, but for costco?";
+  const resolved = api.resolveApifyPrompt(prompt, ["Can you take a look at what Apple's recent posting activity has been?"]);
+  assert.equal(api.selectApifyTask(resolved), "linkedin_company");
+  await api.runApifyTask({ task: "linkedin_company", prompt: resolved, credential: "test", signal: AbortSignal.timeout(5000) });
+  assert.equal(started().input.targets[0], "costco");
+});

@@ -34,7 +34,7 @@ The browser must never call an LLM, Tavily, Apify, or Google API with a user cre
 - `supabase/migrations/202610280002_phase2_chat_runtime.sql` creates owner-scoped conversations and messages with RLS policies that also verify a message belongs to an owned conversation.
 - `/api/chat/**` is protected both by the route proxy and by server-side Supabase session verification.
 - A chat request decrypts only the signed-in user's selected provider credential in server memory. Browser responses contain conversation data and streamed model text, never the credential or ciphertext.
-- After the first completed exchange, Operatr attempts a short title using the selected provider, with a six-second limit and a local fallback if the provider is unavailable. The title call shares the opening message with that provider, may use additional tokens, and never changes providers. Users can rename their own conversations through the protected conversation endpoint.
+- Operatr attempts a short title using the selected provider with a 15-second limit, one bounded retry, and a local fallback if the provider is unavailable. It may retry on a later exchange while the original automatic title remains, and only updates the title if the user has not renamed it. The title call shares the opening message with that provider, may use additional tokens, and never changes providers. Users can rename their own conversations through the protected conversation endpoint.
 - The dashboard composer and Agent workspace use the same persisted conversation API; the dashboard does not simulate tools, task runs, or value calculations.
 - OpenAI, Anthropic, Google Gemini, xAI, and OpenRouter run behind a common streaming interface. OpenRouter is explicit BYOK selection only; free-model availability and provider-specific data terms remain the user's responsibility. Provider fallback, file uploads, model discovery, and background agents are not part of this phase.
 - Gemini 3.8 Flash runs with server-enforced low thinking to preserve the interactive runtime budget. Response effort still controls Operatr's output cap; this setting does not expose hidden reasoning.
@@ -44,7 +44,7 @@ The browser must never call an LLM, Tavily, Apify, or Google API with a user cre
 
 - Each chat message creates an owner-scoped run record and a concise execution trace. These capture operational metadata only: selected provider/model, response mode, bounded character/token budgets, retry count, and terminal status. They do not store credentials, hidden reasoning, or raw provider payloads.
 - Conversation context is bounded to the newest 36,000 characters. Response modes use server-enforced output caps: Concise 800 tokens, Standard 2,000, and Deep 4,000.
-- A run has a 90-second server-side deadline. The user can still stop a request from the workspace; partial text, if any, is saved as cancelled.
+- Research tools retain their own deadlines; the model then receives a separate 120-second generation window, with a 190-second overall server-side backstop. Title and value follow-up calls have separate bounded windows. The user can still stop a request from the workspace; partial text, if any, is saved as cancelled.
 - A transient provider failure may retry exactly once only before any text is streamed. The retry uses the exact same provider and model. There is no automatic model or cross-provider fallback.
 - The workspace shows a high-level execution state—such as preparing, generating, retrying, and saving—rather than hidden model reasoning.
 - Operator identity and preferences live in the existing owner-scoped `profiles` table: display name, organization, avatar selection/custom bounded image, hourly rate, business goals, writing sample, and directives. Email remains an Auth concern and is changed only through the server-side Supabase Auth user endpoint.
@@ -74,3 +74,5 @@ The browser must never call an LLM, Tavily, Apify, or Google API with a user cre
 - Every user-owned database record will be Supabase RLS scoped before application access.
 - Tool output is untrusted input; it cannot alter policy or cause an external action without explicit user approval.
 - Cross-provider fallback requires user opt-in because it changes the recipient of a prompt.
+
+Research responses include a clearly labeled list of retrieved tool links when available, even if the model omits citations. These are not automatically evidence for every claim. Reddit URLs are taken from returned permalinks or derived from a returned valid post ID; when neither is present the response says direct links were unavailable.

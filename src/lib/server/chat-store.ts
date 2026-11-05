@@ -1,4 +1,5 @@
 import "server-only";
+import { attachmentProviderContent } from "@/lib/shared/chat-attachment";
 
 import { supabaseRest } from "@/lib/server/supabase";
 import type { ChatMessage, ChatProvider, ChatRole, ResponseStyle } from "@/lib/server/chat-types";
@@ -25,7 +26,7 @@ type MessageRecord = {
 
 type AgentRunRecord = { id: string };
 
-function titleFor(content: string) {
+export function titleFor(content: string) {
   const normalized = content
     .replace(/\s+/g, " ")
     .replace(/^(?:please\s+)?(?:can|could|would)\s+you\s+/i, "")
@@ -73,10 +74,10 @@ export async function createConversation(
 
 export async function listMessages(conversationId: string, accessToken: string) {
   const response = await supabaseRest<MessageRecord[]>(
-    `chat_messages?conversation_id=eq.${encodeURIComponent(conversationId)}&select=id,conversation_id,role,content,status,created_at&order=created_at.asc&limit=100`,
+    `chat_messages?conversation_id=eq.${encodeURIComponent(conversationId)}&select=id,conversation_id,role,content,status,created_at&order=created_at.desc&limit=100`,
     accessToken,
   );
-  return { ...response, data: response.data || [] };
+  return { ...response, data: (response.data || []).reverse() };
 }
 
 export async function saveMessage(
@@ -171,6 +172,16 @@ export async function renameConversation(conversationId: string, title: string, 
   return { ...response, data: response.data?.[0] || null };
 }
 
+/** A generated title must not overwrite a user's edit made during the run. */
+export async function renameConversationIfUnchanged(conversationId: string, title: string, previousTitle: string, accessToken: string) {
+  const response = await supabaseRest<ConversationRecord[]>(
+    `chat_conversations?id=eq.${encodeURIComponent(conversationId)}&title=eq.${encodeURIComponent(previousTitle)}&select=id,title,provider,model,response_style,created_at,updated_at`,
+    accessToken,
+    { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify({ title }) },
+  );
+  return { ...response, data: response.data?.[0] || null };
+}
+
 export async function updateConversationRuntime(
   conversationId: string,
   runtime: { provider: ChatProvider; model: string; responseStyle: ResponseStyle },
@@ -194,5 +205,5 @@ export async function updateConversationRuntime(
 }
 
 export function toProviderMessages(records: { role: ChatRole; content: string; status: MessageRecord["status"] }[]): ChatMessage[] {
-  return records.filter((message) => message.status !== "failed").map(({ role, content }) => ({ role, content }));
+  return records.filter((message) => message.status !== "failed").map(({ role, content }) => ({ role, content: role === "user" ? attachmentProviderContent(content) : content }));
 }

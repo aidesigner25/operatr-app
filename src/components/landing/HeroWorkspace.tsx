@@ -1,3 +1,4 @@
+import { OperatorAvatar } from "@/components/profile/OperatorAvatar";
 import { ArrowUpRight, Check, FileText, Search, Sparkles } from "lucide-react";
 
 export function HeroWorkspace() {
@@ -16,8 +17,9 @@ export function HeroWorkspace() {
         </header>
 
         <div className="space-y-4 p-4 sm:p-5">
-          <div className="ml-auto max-w-[88%] rounded-2xl rounded-tr-sm bg-[var(--ink)] px-4 py-3 text-[12px] leading-relaxed text-[var(--paper)] shadow-sm">
-            Research our top competitors&apos; pricing changes and prepare a decision-ready brief.
+          <div className="flex items-start justify-end gap-2.5">
+            <div className="max-w-[82%] rounded-2xl rounded-tr-sm bg-[var(--ink)] px-4 py-3 text-[12px] leading-relaxed text-[var(--paper)] shadow-sm">Research our top competitors&apos; pricing changes and prepare a decision-ready brief.</div>
+            <OperatorAvatar choice="muse" alt="" className="h-9 w-9 shrink-0 rounded-xl border border-[var(--line)]" />
           </div>
 
           <div className="max-w-[94%] rounded-2xl rounded-tl-sm border border-[var(--line)] bg-[var(--canvas)] p-4 shadow-[0_8px_20px_-16px_rgba(61,55,45,0.35)]">
