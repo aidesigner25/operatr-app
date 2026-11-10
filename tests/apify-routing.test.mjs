@@ -98,3 +98,12 @@ test("a same-report follow-up targets the newly named company instead of the pre
   await api.runApifyTask({ task: "linkedin_company", prompt: resolved, credential: "test", signal: AbortSignal.timeout(5000) });
   assert.equal(started().input.targets[0], "costco");
 });
+
+
+test("recognizes only LinkedIn hosts at a domain boundary", () => {
+  const { api } = runtime();
+  assert.equal(api.selectApifyTask("Summarize https://linkedin.com/company/example"), "linkedin_posts");
+  assert.equal(api.selectApifyTask("Summarize https://www.linkedin.com/company/example"), "linkedin_posts");
+  assert.equal(api.selectApifyTask("Summarize https://notlinkedin.com/company/example"), "competitor_site");
+  assert.notEqual(api.selectApifyTask("Summarize https://linkedin.com.attacker.com/company/example"), "linkedin_posts");
+});

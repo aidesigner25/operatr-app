@@ -1,3 +1,4 @@
+import { readJsonBody } from "@/lib/server/request-body";
 import { NextResponse } from "next/server";
 import { createRequestId, jsonError, jsonOk } from "@/lib/server/http";
 import { getSessionCookieNames, getSupabaseAuthHeaders, getUserFromAccessToken } from "@/lib/server/supabase";
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
     return jsonError("invalid_content_type", "Expected an application/json request.", requestId, 415);
   }
 
-  const body = await request.json().catch(() => null) as SessionBody | null;
+  const body = await readJsonBody(request, 32_768) as SessionBody | null;
   const accessToken = typeof body?.access_token === "string" ? body.access_token : "";
   const refreshToken = typeof body?.refresh_token === "string" ? body.refresh_token : "";
   if (!accessToken || !refreshToken || accessToken.length > 8_192 || refreshToken.length > 8_192) {

@@ -15,7 +15,7 @@ export async function POST(request: Request) {
     try { origin = new URL(process.env.NEXT_PUBLIC_APP_URL || request.url).origin; } catch { return jsonError("invalid_origin", "The request origin is invalid.", id, 403); }
     if (request.headers.get("origin") !== origin) return jsonError("invalid_origin", "The request origin is invalid.", id, 403);
     if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/pdf") return jsonError("invalid_pdf", "Choose a PDF file.", id, 415);
-    if (!allowRequest(`pdf:extract:${auth.user.id}`, 10, 60_000)) return jsonError("rate_limited", "Too many PDF uploads. Try again shortly.", id, 429);
+    if (!await allowRequest(`pdf:extract:${auth.user.id}`, 10, 60_000)) return jsonError("rate_limited", "Too many PDF uploads. Try again shortly.", id, 429);
     const declared = request.headers.get("content-length");
     if (declared && (!/^\d+$/.test(declared) || Number(declared) > PDF_BYTE_LIMIT)) return jsonError("pdf_too_large", "Choose a PDF no larger than 2 MB.", id, 413);
     const reader = request.body?.getReader();

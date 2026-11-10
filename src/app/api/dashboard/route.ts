@@ -17,7 +17,7 @@ export async function GET(request: Request) {
   try {
     const auth = await getAuthenticatedRequest();
     if (!auth) return jsonError("unauthorized", "Sign in is required.", requestId, 401);
-    if (!allowRequest(`dashboard:read:${auth.user.id}`, 60)) return jsonError("rate_limited", "Too many requests. Try again shortly.", requestId, 429);
+    if (!await allowRequest(`dashboard:read:${auth.user.id}`, 60)) return jsonError("rate_limited", "Too many requests. Try again shortly.", requestId, 429);
     const query = `chat_agent_runs?user_id=eq.${encodeURIComponent(auth.user.id)}&status=eq.completed&select=id,conversation_id,completed_at,chat_conversations(title)&order=completed_at.desc.nullslast&limit=10`;
     const result = await supabaseRest<Run[]>(query, auth.accessToken);
     if (result.error) return jsonError("dashboard_unavailable", "Recent work could not be loaded.", requestId, 503);

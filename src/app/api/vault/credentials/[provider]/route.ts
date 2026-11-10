@@ -1,3 +1,4 @@
+import { readJsonBody } from "@/lib/server/request-body";
 import { createRequestId, jsonError, jsonOk } from "@/lib/server/http";
 import { getAuthenticatedRequest, supabaseRest } from "@/lib/server/supabase";
 import { allowRequest } from "@/lib/server/rate-limit";
@@ -19,7 +20,7 @@ async function getContext(request: Request, context: RouteContext) {
   try {
     const auth = await getAuthenticatedRequest();
     if (!auth) return { requestId, error: jsonError("unauthorized", "Sign in is required.", requestId, 401) };
-    if (!allowRequest(`vault:write:${auth.user.id}`, 12)) {
+    if (!await allowRequest(`vault:write:${auth.user.id}`, 12)) {
       return { requestId, error: jsonError("rate_limited", "Too many credential changes. Try again shortly.", requestId, 429) };
     }
     return { requestId, provider, auth };
@@ -36,7 +37,7 @@ export async function PUT(request: Request, context: RouteContext) {
   if (!request.headers.get("content-type")?.includes("application/json")) {
     return jsonError("invalid_content_type", "Expected an application/json request.", requestId, 415);
   }
-  const body = await request.json().catch(() => null) as CredentialBody | null;
+  const body = await readJsonBody(request, 32_768) as CredentialBody | null;
   const credential = validateCredential(body?.credential);
   if (!credential) return jsonError("invalid_credential", "Enter a valid credential.", requestId, 400);
 

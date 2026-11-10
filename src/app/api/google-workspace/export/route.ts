@@ -1,3 +1,4 @@
+import { readJsonBody } from "@/lib/server/request-body";
 import { createRequestId, jsonError, jsonOk } from "@/lib/server/http";
 import { getAuthenticatedRequest, supabaseRest } from "@/lib/server/supabase";
 import { getFeatureFlags } from "@/lib/server/feature-flags";
@@ -20,8 +21,8 @@ export async function POST(request: Request) {
     if (!getFeatureFlags().googleWorkspace || !config) return jsonError("google_disabled", "Google Workspace is not enabled.", id, 503);
     if (!sameOrigin(request, config)) return jsonError("invalid_origin", "The request origin is invalid.", id, 403);
     if (!request.headers.get("content-type")?.includes("application/json")) return jsonError("invalid_content_type", "Expected JSON.", id, 415);
-    if (!allowRequest(`google:export:${auth.user.id}`, 10, 600_000)) return jsonError("rate_limited", "Too many exports. Try again later.", id, 429);
-    const body = await request.json().catch(() => null) as { messageId?: unknown; kind?: unknown } | null;
+    if (!await allowRequest(`google:export:${auth.user.id}`, 10, 600_000)) return jsonError("rate_limited", "Too many exports. Try again later.", id, 429);
+    const body = await readJsonBody(request, 32_768) as { messageId?: unknown; kind?: unknown } | null;
     if (typeof body?.messageId !== "string" || !UUID.test(body.messageId) || (body.kind !== "doc" && body.kind !== "sheet")) return jsonError("invalid_export", "Select a saved response and export format.", id, 400);
     const query = `chat_messages?id=eq.${encodeURIComponent(body.messageId)}&user_id=eq.${encodeURIComponent(auth.user.id)}&select=conversation_id,created_at,content,role,status,chat_conversations(title)&limit=1`;
     const record = await supabaseRest<Message[]>(query, auth.accessToken);

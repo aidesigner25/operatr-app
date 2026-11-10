@@ -10,6 +10,7 @@ function setup({ existing = false, owner = true, continuation = false } = {}) {
   const helper = { exports: {}, require: () => ({ decodeAttachmentMessage: () => null }) };
   vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../src/lib/shared/task-continuation.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, helper);
   const modules = {
+    "@/lib/server/request-body": { readJsonBody: async (request) => request.json().catch(() => null) },
     "@/lib/server/http": { createRequestId: () => "id", jsonError: (code, message, id, status) => Response.json({ error: { code, message } }, { status }), jsonOk: (data) => Response.json({ data }) },
     "@/lib/server/supabase": { getAuthenticatedRequest: async () => ({ user: { id: "owner" }, accessToken: "jwt" }), supabaseRest: async (path) => {
       calls.push(path);

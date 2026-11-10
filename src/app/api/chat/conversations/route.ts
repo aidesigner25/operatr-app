@@ -1,3 +1,4 @@
+import { readJsonBody } from "@/lib/server/request-body";
 import { createRequestId, jsonError, jsonOk } from "@/lib/server/http";
 import { getAuthenticatedRequest } from "@/lib/server/supabase";
 import { allowRequest } from "@/lib/server/rate-limit";
@@ -25,7 +26,7 @@ export async function GET(request: Request) {
   const result = await authOrError(request);
   if ("error" in result) return result.error;
   const { auth, requestId } = result;
-  if (!allowRequest(`chat:list:${auth.user.id}`, 60)) return jsonError("rate_limited", "Too many chat requests. Try again shortly.", requestId, 429);
+  if (!await allowRequest(`chat:list:${auth.user.id}`, 60)) return jsonError("rate_limited", "Too many chat requests. Try again shortly.", requestId, 429);
 
   const conversations = await listConversations(auth.accessToken);
   if (conversations.error) return jsonError("chat_unavailable", "Conversations could not be loaded.", requestId, 503);
@@ -37,10 +38,10 @@ export async function POST(request: Request) {
   if ("error" in result) return result.error;
   const { auth, requestId } = result;
   if (!getFeatureFlags().chat) return jsonError("chat_disabled", "Chat is not enabled for this environment yet.", requestId, 503);
-  if (!allowRequest(`chat:create:${auth.user.id}`, 20)) return jsonError("rate_limited", "Too many new conversations. Try again shortly.", requestId, 429);
+  if (!await allowRequest(`chat:create:${auth.user.id}`, 20)) return jsonError("rate_limited", "Too many new conversations. Try again shortly.", requestId, 429);
   if (!request.headers.get("content-type")?.includes("application/json")) return jsonError("invalid_content_type", "Expected an application/json request.", requestId, 415);
 
-  const body = await request.json().catch(() => null) as CreateConversationBody | null;
+  const body = await readJsonBody(request, 512_000) as CreateConversationBody | null;
   const firstMessage = typeof body?.firstMessage === "string" ? body.firstMessage.trim() : "";
   if (!isChatProvider(body?.provider) || !isAllowedModel(body.provider, body?.model) || !isResponseStyle(body?.responseStyle) || !firstMessage || firstMessage.length > 50_000) {
     return jsonError("invalid_conversation", "Choose a supported provider and model, then enter a message.", requestId, 400);

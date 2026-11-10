@@ -1,3 +1,4 @@
+import { readJsonBody } from "@/lib/server/request-body";
 import { createRequestId, jsonError, jsonOk } from "@/lib/server/http";
 import { getAuthenticatedRequest, supabaseRest } from "@/lib/server/supabase";
 import { allowRequest } from "@/lib/server/rate-limit";
@@ -21,8 +22,8 @@ export async function POST(request: Request) {
     try { origin = new URL(process.env.NEXT_PUBLIC_APP_URL || request.url).origin; } catch { return jsonError("invalid_origin", "The request origin is invalid.", requestId, 403); }
     if (request.headers.get("origin") !== origin) return jsonError("invalid_origin", "The request origin is invalid.", requestId, 403);
     if (!request.headers.get("content-type")?.includes("application/json")) return jsonError("invalid_content_type", "Expected JSON.", requestId, 415);
-    if (!allowRequest(`value-retry:${auth.user.id}`, 6, 600_000)) return jsonError("rate_limited", "Too many estimate retries. Try again later.", requestId, 429);
-    const body = await request.json().catch(() => null) as { messageId?: unknown } | null;
+    if (!await allowRequest(`value-retry:${auth.user.id}`, 6, 600_000)) return jsonError("rate_limited", "Too many estimate retries. Try again later.", requestId, 429);
+    const body = await readJsonBody(request, 32_768) as { messageId?: unknown } | null;
     if (typeof body?.messageId !== "string" || !UUID.test(body.messageId)) return jsonError("invalid_message", "Select a saved response.", requestId, 400);
     const messageId = body.messageId;
     const existing = await supabaseRest<{ message_id: string; source: string }[]>(`chat_value_estimates?user_id=eq.${encodeURIComponent(auth.user.id)}&message_id=eq.${encodeURIComponent(messageId)}&select=message_id,source&limit=1`, auth.accessToken);

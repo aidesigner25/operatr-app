@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   try {
     const auth = await getAuthenticatedRequest();
     if (!auth) return jsonError("unauthorized", "Sign in is required.", id, 401);
-    if (!allowRequest(`value-summary:${auth.user.id}`, 60)) return jsonError("rate_limited", "Try again shortly.", id, 429);
+    if (!await allowRequest(`value-summary:${auth.user.id}`, 60)) return jsonError("rate_limited", "Try again shortly.", id, 429);
     const requestedZone = new URL(request.url).searchParams.get("timezone") || "UTC";
     let timezone = "UTC";
     try { if (requestedZone.length <= 80) timezone = new Intl.DateTimeFormat("en-US", { timeZone: requestedZone }).resolvedOptions().timeZone; } catch { /* Use UTC when a browser supplies an invalid zone. */ }

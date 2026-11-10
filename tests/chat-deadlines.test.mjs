@@ -5,7 +5,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import { validateAttachment, attachmentSecurityIssue, encodeAttachmentMessage } from "../src/lib/shared/chat-attachment.ts";
 
-function setup({ timeoutModel = false, renameDuringResearch = false, cancelDuringModel = false, transientTitleFailure = false, priorExchange = false, assessmentStatus = "saved", continuation = false, both = false, webFails = false, asset = false, fakeTool = "", noResearch = false, promptText = "", assetFails = false, realAssetIntent = false, attachmentInput = null } = {}) {
+function setup({ timeoutModel = false, renameDuringResearch = false, cancelDuringModel = false, transientTitleFailure = false, priorExchange = false, assessmentStatus = "saved", continuation = false, both = false, webFails = false, asset = false, fakeTool = "", noResearch = false, promptText = "", assetFails = false, realAssetIntent = false, attachmentInput = null, responseChunks = null } = {}) {
   const events = [], saved = [], runs = [], assessments = [], instructions = [];
   let title = "Initial title", modelController, researchFinished = continuation || noResearch, titleCalls = 0, modelCalls = 0;
   const client = new AbortController();
@@ -57,6 +57,7 @@ function setup({ timeoutModel = false, renameDuringResearch = false, cancelDurin
         yield "call>websearch<param_key>q</param_key></tool_call>";
         return;
       }
+      if (responseChunks) { for (const chunk of responseChunks) yield chunk; return; }
       yield "Partial or complete answer";
       if (timeoutModel) { modelController.abort(new DOMException("timed out", "TimeoutError")); throw signal.reason; }
       if (cancelDuringModel) { client.abort(); throw signal.reason; }
@@ -227,4 +228,24 @@ test("chat refuses suspicious extracted text before any research or model call",
   assert.match(result, /unsafe_attachment/);
   assert.equal(task.events.includes("model"), false);
   assert.equal(task.events.includes("research"), false);
+});
+
+
+test("oversized cumulative provider output stops at the limit and saves a partial response", async () => {
+  const task = setup({ noResearch: true, responseChunks: ["x".repeat(30_000), "y".repeat(30_000)] });
+  const stream = await task.run();
+  const assistant = task.saved.find((item) => item.role === "assistant");
+  assert.equal(assistant.content.length, 49_000);
+  assert.equal(assistant.status, "cancelled");
+  assert.match(stream, /provider_response_too_large/);
+  assert.equal(task.assessments.length, 0);
+});
+
+test("a valid Google file link remains within the stored message limit", async () => {
+  const task = setup({ noResearch: true, asset: true, responseChunks: ["x".repeat(49_000)] });
+  await task.run();
+  const assistant = task.saved.find((item) => item.role === "assistant");
+  assert.ok(assistant.content.length <= 50_000);
+  assert.match(assistant.content, /Open the created Google Doc/);
+  assert.equal(assistant.status, "completed");
 });
