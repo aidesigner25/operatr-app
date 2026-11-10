@@ -22,6 +22,10 @@ export const dynamic = "force-dynamic";
 type RouteContext = { params: Promise<{ conversationId: string }> };
 type MessageBody = { content?: unknown; useWeb?: unknown; useApify?: unknown; attachment?: unknown };
 const encoder = new TextEncoder();
+// Leave room under the database's 50,000-character message limit for an
+// optional Google file status/link appended after the model response.
+const MAX_MODEL_RESPONSE_CHARS = 49_000;
+const MAX_GOOGLE_STATUS_CHARS = 1_000;
 
 function event(type: string, data: Record<string, unknown>) {
   return encoder.encode(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -88,7 +92,7 @@ export async function POST(request: Request, context: RouteContext) {
   try {
     const auth = await getAuthenticatedRequest();
     if (!auth) return jsonError("unauthorized", "Sign in is required.", requestId, 401);
-    if (!allowRequest(`chat:send:${auth.user.id}`, 20, 60_000)) return jsonError("rate_limited", "Too many messages. Try again shortly.", requestId, 429);
+    if (!await allowRequest(`chat:send:${auth.user.id}`, 20, 60_000)) return jsonError("rate_limited", "Too many messages. Try again shortly.", requestId, 429);
     const conversation = await getConversation(conversationId, auth.accessToken);
     if (conversation.error) return jsonError("chat_unavailable", "The conversation could not be loaded.", requestId, 503);
     if (!conversation.data) return jsonError("not_found", "Conversation not found.", requestId, 404);
@@ -103,9 +107,9 @@ export async function POST(request: Request, context: RouteContext) {
     const requestsLinkedInScan = /\blinkedin\b/i.test(content) && /\b(?:scan|scrape|research|posts?|posting|activity|updates?)\b/i.test(content);
     if (requestsLinkedInScan && !useApify && !task.isContinuation) return jsonError("apify_not_enabled", "Turn on Apify research for the requested LinkedIn scan, then resend your message.", requestId, 400);
     if (useWeb && !getFeatureFlags().tavily) return jsonError("research_disabled", "Live web research is not enabled for this environment yet.", requestId, 503);
-    if (useWeb && !allowRequest(`tavily:search:${auth.user.id}`, 8, 10 * 60_000)) return jsonError("research_rate_limited", "Live web research is limited to 8 searches per 10 minutes.", requestId, 429);
+    if (useWeb && !await allowRequest(`tavily:search:${auth.user.id}`, 8, 10 * 60_000)) return jsonError("research_rate_limited", "Live web research is limited to 8 searches per 10 minutes.", requestId, 429);
     if (useApify && !getFeatureFlags().apify) return jsonError("apify_disabled", "Apify research is not enabled for this environment yet.", requestId, 503);
-    if (apifyTask && !allowRequest(`apify:run:${auth.user.id}`, 5, 10 * 60_000)) return jsonError("apify_rate_limited", "Apify research is limited to 5 runs per 10 minutes.", requestId, 429);
+    if (apifyTask && !await allowRequest(`apify:run:${auth.user.id}`, 5, 10 * 60_000)) return jsonError("apify_rate_limited", "Apify research is limited to 5 runs per 10 minutes.", requestId, 429);
 
     // Validate every requested recipient before persisting the user message. A missing
     // Tavily connection should never create an unanswered message in the conversation.
@@ -282,6 +286,14 @@ export async function POST(request: Request, context: RouteContext) {
                 lowReasoningEffort: retryAfterEmptyOutputLimit,
               });
               for await (const delta of (/<\s*(?:tool_call|function_call|tool_use)\b/i.test(content) ? responseStream : guardResearchOutput(responseStream))) {
+                const remaining = MAX_MODEL_RESPONSE_CHARS - answer.length;
+                if (delta.length > remaining) {
+                  let partial = delta.slice(0, Math.max(0, remaining));
+                  // Avoid cutting a Unicode surrogate pair in half at the boundary.
+                  if (partial && /[\uD800-\uDBFF]/.test(partial.at(-1)!) && /[\uDC00-\uDFFF]/.test(delta.charAt(partial.length))) partial = partial.slice(0, -1);
+                  if (partial) { emittedText = true; answer += partial; controller.enqueue(event("delta", { text: partial })); }
+                  throw new ChatRuntimeError("provider_response_too_large", "The response reached its size limit. Please ask to continue.", 502);
+                }
                 emittedText = true;
                 answer += delta;
                 controller.enqueue(event("delta", { text: delta }));
@@ -322,7 +334,7 @@ export async function POST(request: Request, context: RouteContext) {
           }
           if (answer.trim() && !request.signal.aborted && !researchFailure && retrievedSources.length) {
             const suffix = researchSourceSuffix(retrievedSources, answer);
-            if (suffix && answer.length + suffix.length <= 50_000) { answer += suffix; controller.enqueue(event("delta", { text: suffix })); }
+            if (suffix && answer.length + suffix.length <= MAX_MODEL_RESPONSE_CHARS) { answer += suffix; controller.enqueue(event("delta", { text: suffix })); }
           }
           if (completed && assetKind && !researchFailure && answer.trim() && !request.signal.aborted) {
             await trace("saving", `Creating requested Google ${assetKind === "doc" ? "Doc" : "Sheet"}`);
@@ -340,8 +352,9 @@ export async function POST(request: Request, context: RouteContext) {
               const partial = caught instanceof GoogleExportError && caught.partialUrl ? ` [Open the file](${caught.partialUrl}).` : "";
               note = `\n\nGoogle file creation could not be confirmed: ${message}${partial}`;
             }
-            answer += note;
-            controller.enqueue(event("delta", { text: note }));
+            const boundedNote = note.slice(0, MAX_GOOGLE_STATUS_CHARS);
+            answer += boundedNote;
+            controller.enqueue(event("delta", { text: boundedNote }));
           }
           if (!completed && (timeout.aborted || modelTimeout?.aborted || !(failure instanceof DOMException && failure.name === "AbortError"))) {
             const timedOut = (timeout.aborted || modelTimeout?.aborted) && !request.signal.aborted;

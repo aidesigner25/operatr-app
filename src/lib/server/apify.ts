@@ -47,15 +47,19 @@ function urlsIn(value: string) {
   }).filter((item): item is string => Boolean(item)))];
 }
 
+function isLinkedInHost(hostname: string) {
+  return hostname === "linkedin.com" || hostname.endsWith(".linkedin.com");
+}
+
 function linkedInUrls(value: string) {
   return urlsIn(value).filter((url) => {
     const parsed = new URL(url);
-    return parsed.hostname.endsWith("linkedin.com") && /\/(in|company|showcase|posts|feed\/update)\//.test(parsed.pathname);
+    return isLinkedInHost(parsed.hostname) && /\/(in|company|showcase|posts|feed\/update)\//.test(parsed.pathname);
   });
 }
 
 function publicSiteUrls(value: string) {
-  return urlsIn(value).filter((url) => !new URL(url).hostname.endsWith("linkedin.com"));
+  return urlsIn(value).filter((url) => !isLinkedInHost(new URL(url).hostname));
 }
 
 function redditUrls(value: string) {
@@ -411,9 +415,9 @@ function normalise(task: ApifyTask, payload: unknown): ApifySource[] {
   }).slice(0, MAX_SOURCES);
 }
 
-function apiError(response: Response, body: { error?: { message?: unknown }; message?: unknown } | null) {
+function apiError(response: Response) {
   const status = response.status === 401 || response.status === 403 ? 409 : response.status === 429 ? 429 : 502;
-  const message = status === 409 ? "Your Apify token needs to be reconnected in Integrations." : status === 429 ? "Apify has rate-limited this token. Try again shortly." : cleanText(body?.error?.message ?? body?.message, 220) || "The Apify run could not be completed.";
+  const message = status === 409 ? "Your Apify token needs to be reconnected in Integrations." : status === 429 ? "Apify has rate-limited this token. Try again shortly." : "The Apify run could not be completed.";
   return new ChatRuntimeError("apify_error", message, status, response.status >= 500 || response.status === 429);
 }
 
@@ -449,7 +453,7 @@ export async function runApifyTask(input: { task: ApifyTask; prompt: string; cre
     if (timeout.aborted) return { label: taskLabel(input.task), sources: [], incomplete: true };
     throw new ChatRuntimeError("apify_unavailable", "The Apify run could not be reached. Try again shortly.", 502, true);
   }
-  if (!started.ok) throw apiError(started, await started.json().catch(() => null) as { error?: { message?: unknown }; message?: unknown } | null);
+  if (!started.ok) throw apiError(started);
   const created = await started.json().catch(() => null) as { data?: ApifyRun } | null;
   const runId = typeof created?.data?.id === "string" ? created.data.id : null;
   if (!runId) throw new ChatRuntimeError("apify_unavailable", "Apify did not return a run identifier. Try again shortly.", 502, true);
@@ -463,7 +467,7 @@ export async function runApifyTask(input: { task: ApifyTask; prompt: string; cre
       cache: "no-store",
       signal,
     });
-    if (!waited.ok) throw apiError(waited, await waited.json().catch(() => null) as { error?: { message?: unknown }; message?: unknown } | null);
+    if (!waited.ok) throw apiError(waited);
     run = (await waited.json().catch(() => null) as { data?: ApifyRun } | null)?.data || null;
   } catch (caught) {
     if (caught instanceof DOMException && caught.name === "AbortError" && input.signal.aborted) throw caught;
@@ -481,7 +485,7 @@ export async function runApifyTask(input: { task: ApifyTask; prompt: string; cre
       cache: "no-store",
       signal,
     });
-    if (!results.ok) throw apiError(results, await results.json().catch(() => null) as { error?: { message?: unknown }; message?: unknown } | null);
+    if (!results.ok) throw apiError(results);
     return { label: taskLabel(input.task), sources: normalise(input.task, await results.json().catch(() => [])), incomplete: status !== "SUCCEEDED" };
   } catch (caught) {
     if (caught instanceof DOMException && caught.name === "AbortError" && input.signal.aborted) throw caught;

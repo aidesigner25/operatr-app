@@ -17,12 +17,22 @@ export type EncryptedCredential = {
   lastFour: string;
 };
 
-function encryptionKey(): Buffer {
+function encryptionKey(requestedKeyId = keyId()): Buffer {
   assertCredentialVaultConfiguration();
-  const secret = getServerEnvironment().encryptionSecret!;
+  let secret = getServerEnvironment().encryptionSecret!;
+  if (requestedKeyId !== keyId()) {
+    const encodedKeys = process.env.OPERATR_KEY_ENCRYPTION_PREVIOUS_KEYS?.trim();
+    if (!encodedKeys || encodedKeys.length > 16_384) throw new Error("Credential uses an unavailable encryption key version.");
+    let keys: unknown;
+    try { keys = JSON.parse(encodedKeys); } catch { throw new Error("Previous encryption keys are invalid."); }
+    if (!keys || typeof keys !== "object" || Array.isArray(keys)) throw new Error("Previous encryption keys are invalid.");
+    const record = keys as Record<string, unknown>;
+    if (!Object.hasOwn(record, requestedKeyId) || typeof record[requestedKeyId] !== "string") throw new Error("Credential uses an unavailable encryption key version.");
+    secret = record[requestedKeyId] as string;
+  }
   const key = Buffer.from(secret.replace(/-/g, "+").replace(/_/g, "/"), "base64");
   if (key.length !== 32) {
-    throw new Error("OPERATR_KEY_ENCRYPTION_SECRET must decode to exactly 32 bytes.");
+    throw new Error("Encryption key must decode to exactly 32 bytes.");
   }
   return key;
 }
@@ -67,18 +77,23 @@ export function encryptCredential(
   };
 }
 
-/** Reserved for the future provider-runtime path; never return its result to an API response. */
+/** Decrypt only on the server; never return the result in an API response. */
 export function decryptCredential(
   ciphertext: string,
   userId: string,
   provider: EncryptionPurpose,
 ): string {
-  const [version, storedKeyId, ivPart, tagPart, encryptedPart] = ciphertext.split(".");
-  if (version !== `v${ENCRYPTION_VERSION}` || storedKeyId !== keyId() || !ivPart || !tagPart || !encryptedPart) {
+  const [version, storedKeyId, ivPart, tagPart, encryptedPart, extra] = ciphertext.split(".");
+  if (version !== `v${ENCRYPTION_VERSION}` || !storedKeyId || !ivPart || !tagPart || !encryptedPart || extra !== undefined) {
     throw new Error("Credential uses an unavailable encryption key version.");
   }
-  const decipher = createDecipheriv(ALGORITHM, encryptionKey(), Buffer.from(ivPart, "base64url"));
+  const decipher = createDecipheriv(ALGORITHM, encryptionKey(storedKeyId), Buffer.from(ivPart, "base64url"));
   decipher.setAAD(aad(userId, provider));
   decipher.setAuthTag(Buffer.from(tagPart, "base64url"));
   return Buffer.concat([decipher.update(Buffer.from(encryptedPart, "base64url")), decipher.final()]).toString("utf8");
+}
+
+/** Prepare a credential for a separate, controlled migration; this does not write to storage. */
+export function reencryptCredential(ciphertext: string, userId: string, provider: EncryptionPurpose): EncryptedCredential {
+  return encryptCredential(decryptCredential(ciphertext, userId, provider), userId, provider);
 }

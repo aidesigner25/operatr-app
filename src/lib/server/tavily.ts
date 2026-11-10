@@ -75,13 +75,12 @@ export async function searchTavily(input: { query: string; credential: string; s
   }
 
   if (!response.ok) {
-    const body = await response.json().catch(() => null) as { detail?: unknown; message?: unknown; error?: { message?: unknown } } | null;
     const status = response.status === 401 || response.status === 403 ? 409 : response.status === 429 ? 429 : 502;
     const message = status === 409
       ? "Your Tavily key needs to be reconnected in Integrations."
       : status === 429
         ? "Tavily has rate-limited this key. Try again shortly."
-        : cleanText(body?.error?.message ?? body?.message ?? body?.detail, 220) || "Live web research could not be completed.";
+        : "Live web research could not be completed.";
     throw new ChatRuntimeError("research_error", message, status, response.status >= 500 || response.status === 429);
   }
 

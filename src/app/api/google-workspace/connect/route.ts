@@ -15,7 +15,7 @@ export async function POST(request: Request) {
     const config = googleConfig();
     if (!getFeatureFlags().googleWorkspace || !config) return jsonError("google_disabled", "Google Workspace is not configured yet.", id, 503);
     if (!sameOrigin(request, config)) return jsonError("invalid_origin", "The request origin is invalid.", id, 403);
-    if (!allowRequest(`google:connect:${auth.user.id}`, 10, 600_000)) return jsonError("rate_limited", "Try again later.", id, 429);
+    if (!await allowRequest(`google:connect:${auth.user.id}`, 10, 600_000)) return jsonError("rate_limited", "Try again later.", id, 429);
     const flow = createGoogleAuthorization(auth.user.id, config);
     const response = NextResponse.json({ data: { url: flow.url }, requestId: id }, { headers: { "Cache-Control": "no-store" } });
     response.cookies.set(GOOGLE_STATE_COOKIE, flow.cookie, { httpOnly: true, secure: config.origin.startsWith("https:"), sameSite: "lax", path: "/api/google-workspace/callback", maxAge: OAUTH_LIFETIME_SECONDS });

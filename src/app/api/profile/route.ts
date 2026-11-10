@@ -1,3 +1,4 @@
+import { readJsonBody } from "@/lib/server/request-body";
 import { createRequestId, jsonError, jsonOk } from "@/lib/server/http";
 import { getAuthenticatedRequest, getSupabaseAuthHeaders, supabaseRest } from "@/lib/server/supabase";
 import { getServerEnvironment } from "@/lib/server/env";
@@ -62,7 +63,7 @@ export async function GET(request: Request) {
   try {
     const auth = await getAuthenticatedRequest();
     if (!auth) return jsonError("unauthorized", "Sign in is required.", requestId, 401);
-    if (!allowRequest(`profile:read:${auth.user.id}`, 60)) return jsonError("rate_limited", "Too many profile requests. Try again shortly.", requestId, 429);
+    if (!await allowRequest(`profile:read:${auth.user.id}`, 60)) return jsonError("rate_limited", "Too many profile requests. Try again shortly.", requestId, 429);
     const profile = await currentProfile(auth.accessToken, auth.user.id);
     if (profile.error) return jsonError("profile_unavailable", "Your profile could not be loaded.", requestId, 503);
     return jsonOk({ profile: profileShape(profile.data, auth.user.email) }, requestId);
@@ -74,13 +75,14 @@ export async function GET(request: Request) {
 export async function PUT(request: Request) {
   const requestId = createRequestId(request.headers.get("x-request-id"));
   if (!request.headers.get("content-type")?.includes("application/json")) return jsonError("invalid_content_type", "Expected an application/json request.", requestId, 415);
-  const body = await request.json().catch(() => null) as ProfileBody | null;
+  // Allow the declared 2.1 MB avatar data URL plus the bounded text fields.
+  const body = await readJsonBody(request, 2_400_000) as ProfileBody | null;
   if (!body) return jsonError("invalid_profile", "Enter valid profile information.", requestId, 400);
 
   try {
     const auth = await getAuthenticatedRequest();
     if (!auth) return jsonError("unauthorized", "Sign in is required.", requestId, 401);
-    if (!allowRequest(`profile:write:${auth.user.id}`, 20, 60_000)) return jsonError("rate_limited", "Too many profile changes. Try again shortly.", requestId, 429);
+    if (!await allowRequest(`profile:write:${auth.user.id}`, 20, 60_000)) return jsonError("rate_limited", "Too many profile changes. Try again shortly.", requestId, 429);
 
     const displayName = text(body.displayName, 80);
     const organizationName = text(body.organizationName, 160);

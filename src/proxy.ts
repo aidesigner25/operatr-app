@@ -19,9 +19,24 @@ function isProtected(pathname: string) {
   return PROTECTED_PATHS.includes(pathname) || PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
+/** Cookie-authenticated browser mutations must originate from the configured app. */
+export function validMutationOrigin(request: NextRequest): boolean {
+  try {
+    const configured = process.env.NEXT_PUBLIC_APP_URL?.trim();
+    if (!configured && process.env.NODE_ENV === "production") return false;
+    const app = new URL(configured || request.url);
+    if (app.username || app.password || (configured && (app.pathname !== "/" || app.search || app.hash))) return false;
+    if (app.protocol !== "https:" && !(process.env.NODE_ENV !== "production" && app.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(app.hostname))) return false;
+    return request.headers.get("origin") === app.origin;
+  } catch { return false; }
+}
+
 /** Verifies Supabase sessions before a request reaches any protected page or vault API route. */
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  if (pathname.startsWith("/api/") && !["GET", "HEAD", "OPTIONS"].includes(request.method) && !validMutationOrigin(request)) {
+    return NextResponse.json({ error: { code: "invalid_origin", message: "The request origin is invalid." } }, { status: 403, headers: { "Cache-Control": "no-store" } });
+  }
   if (!isProtected(pathname)) return NextResponse.next();
 
   const accessToken = request.cookies.get(ACCESS_TOKEN_COOKIE)?.value;
@@ -77,5 +92,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/api", "/welcome/:path*", "/dashboard/:path*", "/agent/:path*", "/integrations/:path*", "/settings/:path*", "/profile/:path*", "/api/vault/:path*", "/api/chat/:path*", "/api/dashboard/:path*", "/api/google-workspace/:path*", "/api/value-estimates/:path*"],
+  matcher: ["/api", "/api/:path*", "/welcome/:path*", "/dashboard/:path*", "/agent/:path*", "/integrations/:path*", "/settings/:path*", "/profile/:path*"],
 };

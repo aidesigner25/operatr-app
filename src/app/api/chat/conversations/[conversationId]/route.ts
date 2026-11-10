@@ -1,3 +1,4 @@
+import { readJsonBody } from "@/lib/server/request-body";
 import { createRequestId, jsonError, jsonOk } from "@/lib/server/http";
 import { getAuthenticatedRequest } from "@/lib/server/supabase";
 import { getConversation, listMessages, renameConversation, updateConversationRuntime } from "@/lib/server/chat-store";
@@ -16,7 +17,7 @@ export async function GET(request: Request, context: RouteContext) {
   try {
     const auth = await getAuthenticatedRequest();
     if (!auth) return jsonError("unauthorized", "Sign in is required.", requestId, 401);
-    if (!allowRequest(`chat:read:${auth.user.id}`, 100)) return jsonError("rate_limited", "Too many chat requests. Try again shortly.", requestId, 429);
+    if (!await allowRequest(`chat:read:${auth.user.id}`, 100)) return jsonError("rate_limited", "Too many chat requests. Try again shortly.", requestId, 429);
 
     const conversation = await getConversation(conversationId, auth.accessToken);
     if (conversation.error) return jsonError("chat_unavailable", "The conversation could not be loaded.", requestId, 503);
@@ -35,10 +36,10 @@ export async function PATCH(request: Request, context: RouteContext) {
   try {
     const auth = await getAuthenticatedRequest();
     if (!auth) return jsonError("unauthorized", "Sign in is required.", requestId, 401);
-    if (!allowRequest(`chat:configure:${auth.user.id}`, 30)) return jsonError("rate_limited", "Too many conversation changes. Try again shortly.", requestId, 429);
+    if (!await allowRequest(`chat:configure:${auth.user.id}`, 30)) return jsonError("rate_limited", "Too many conversation changes. Try again shortly.", requestId, 429);
     if (!request.headers.get("content-type")?.includes("application/json")) return jsonError("invalid_content_type", "Expected an application/json request.", requestId, 415);
 
-    const body = await request.json().catch(() => null) as UpdateConversationBody | null;
+    const body = await readJsonBody(request, 32_768) as UpdateConversationBody | null;
     const title = typeof body?.title === "string" ? body.title.replace(/\s+/g, " ").trim() : undefined;
     const hasRuntime = body?.provider !== undefined || body?.model !== undefined || body?.responseStyle !== undefined;
     if (hasRuntime) {

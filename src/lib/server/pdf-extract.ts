@@ -19,11 +19,22 @@ const { parentPort, workerData } = require('node:worker_threads');
       const page = await doc.getPage(i);
       const [pageActions, annotations] = await Promise.all([page.getJSActions(), page.getAnnotations({ intent: 'display' })]);
       if ((pageActions && Object.keys(pageActions).length) || annotations.some((annotation) => annotation.subtype === 'FileAttachment')) throw new Error('active_content');
-      const result = await page.getTextContent();
-      for (const item of result.items) {
-        if (typeof item.str !== 'string') continue;
-        text += item.str + (item.hasEOL ? '\\n' : ' ');
-        if (text.length > workerData.maxChars) throw new Error('text_limit');
+      // Consume text incrementally before applying the application limit.
+      const textReader = page.streamTextContent().getReader();
+      let textStreamDone = false;
+      try {
+        while (true) {
+          const chunk = await textReader.read();
+          if (chunk.done) { textStreamDone = true; break; }
+          for (const item of chunk.value.items) {
+            if (typeof item.str !== 'string') continue;
+            if (text.length + item.str.length + 1 > workerData.maxChars) throw new Error('text_limit');
+            text += item.str + (item.hasEOL ? '\\n' : ' ');
+          }
+        }
+      } finally {
+        if (!textStreamDone) await textReader.cancel().catch(() => {});
+        textReader.releaseLock();
       }
       text += '\\n\\n';
       page.cleanup();
@@ -49,6 +60,6 @@ export function extractPdfText(bytes: Uint8Array, options: { maxPages: number; m
     const timer = setTimeout(() => finish("timeout"), options.timeoutMs ?? 15_000);
     worker.on("message", (result: { text?: string; error?: string }) => finish(result.error, result.text));
     worker.on("error", () => finish("invalid_pdf"));
-    worker.on("exit", (code) => { if (!settled && code !== 0) finish("invalid_pdf"); });
+    worker.on("exit", () => { if (!settled) finish("invalid_pdf"); });
   });
 }

@@ -8,6 +8,7 @@ const messageId = "12345678-1234-1234-1234-123456789abc";
 function route({ ownsMessage = true, authenticated = true } = {}) {
   let saved;
   const modules = {
+    "@/lib/server/request-body": { readJsonBody: async (request) => request.json().catch(() => null) },
     "@/lib/server/http": { createRequestId: () => "request", jsonError: (code, message, id, status) => Response.json({ error: { code, message } }, { status }), jsonOk: (data) => Response.json({ data }) },
     "@/lib/server/supabase": { getAuthenticatedRequest: async () => authenticated ? { user: { id: "owner" }, accessToken: "jwt" } : null, supabaseRest: async (path, token, init = {}) => {
       if (path.startsWith("chat_messages")) return { data: ownsMessage ? [{ id: messageId, conversation_id: "conversation" }] : [], error: null };

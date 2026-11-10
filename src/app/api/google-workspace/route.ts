@@ -11,7 +11,7 @@ export async function GET(request: Request) {
   try {
     const auth = await getAuthenticatedRequest();
     if (!auth) return jsonError("unauthorized", "Sign in is required.", id, 401);
-    if (!allowRequest(`google:status:${auth.user.id}`, 60)) return jsonError("rate_limited", "Try again later.", id, 429);
+    if (!await allowRequest(`google:status:${auth.user.id}`, 60)) return jsonError("rate_limited", "Try again later.", id, 429);
     const configured = Boolean(googleConfig());
     const enabled = getFeatureFlags().googleWorkspace && configured;
     if (!configured) return jsonOk({ enabled: false, connected: false }, id);
@@ -27,7 +27,7 @@ export async function DELETE(request: Request) {
     if (!auth) return jsonError("unauthorized", "Sign in is required.", id, 401);
     const config = googleConfig();
     if (!config || !sameOrigin(request, config)) return jsonError("invalid_origin", "The request origin is invalid.", id, 403);
-    if (!allowRequest(`google:disconnect:${auth.user.id}`, 10, 600_000)) return jsonError("rate_limited", "Try again later.", id, 429);
+    if (!await allowRequest(`google:disconnect:${auth.user.id}`, 10, 600_000)) return jsonError("rate_limited", "Try again later.", id, 429);
     const token = await loadGoogleRefreshToken(auth.user.id, auth.accessToken);
     if (token) {
       const revoked = await fetch("https://oauth2.googleapis.com/revoke", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ token }), cache: "no-store", signal: AbortSignal.timeout(15_000) });

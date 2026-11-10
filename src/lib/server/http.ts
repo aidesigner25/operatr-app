@@ -3,8 +3,9 @@ import { NextResponse } from "next/server";
 export type ApiSuccess<T> = { data: T; requestId: string };
 export type ApiFailure = { error: { code: string; message: string }; requestId: string };
 
-export function createRequestId(provided?: string | null): string {
-  return provided?.trim() || crypto.randomUUID();
+/** A client-controlled header is not a reliable audit or correlation ID. */
+export function createRequestId(_provided?: string | null): string {
+  return crypto.randomUUID();
 }
 
 export function jsonOk<T>(data: T, requestId: string, init?: ResponseInit) {

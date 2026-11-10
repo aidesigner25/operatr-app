@@ -19,7 +19,7 @@ async function authenticatedRequestOrError(request: Request) {
   try {
     const auth = await getAuthenticatedRequest();
     if (!auth) return { requestId, error: jsonError("unauthorized", "Sign in is required.", requestId, 401) };
-    if (!allowRequest(`vault:list:${auth.user.id}`, 30)) {
+    if (!await allowRequest(`vault:list:${auth.user.id}`, 30)) {
       return { requestId, error: jsonError("rate_limited", "Too many vault requests. Try again shortly.", requestId, 429) };
     }
     return { requestId, auth };

@@ -19,3 +19,10 @@ test("rejects oversized page count, no text, and malformed documents", async () 
   await assert.rejects(extractPdfText(makePdf(" "), { maxPages: 25, maxChars: 20000 }), /empty_text/);
   await assert.rejects(extractPdfText(new TextEncoder().encode("not a pdf"), { maxPages: 25, maxChars: 20000 }), /invalid_pdf/);
 });
+
+
+test("rejects excessive extracted text while preserving normal multi-page extraction", async () => {
+  await assert.rejects(extractPdfText(makePdf("Normal text", 2), { maxPages: 25, maxChars: 5 }), /text_limit/);
+  const content = await extractPdfText(makePdf("Normal text", 2), { maxPages: 25, maxChars: 20_000 });
+  assert.equal((content.match(/Normal text/g) || []).length, 2);
+});

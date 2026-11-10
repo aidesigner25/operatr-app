@@ -1,3 +1,4 @@
+import { readJsonBody } from "@/lib/server/request-body";
 import { createRequestId, jsonError, jsonOk } from "@/lib/server/http";
 import { getAuthenticatedRequest, supabaseRest } from "@/lib/server/supabase";
 import { allowRequest } from "@/lib/server/rate-limit";
@@ -16,7 +17,7 @@ async function owner(request: Request) {
   if (!messageId) return { error: jsonError("invalid_message", "Select a saved response.", requestId, 400) };
   const auth = await getAuthenticatedRequest();
   if (!auth) return { error: jsonError("unauthorized", "Sign in is required.", requestId, 401) };
-  if (!allowRequest(`value-estimate:${auth.user.id}`, 60)) return { error: jsonError("rate_limited", "Try again shortly.", requestId, 429) };
+  if (!await allowRequest(`value-estimate:${auth.user.id}`, 60)) return { error: jsonError("rate_limited", "Try again shortly.", requestId, 429) };
   return { auth, messageId, requestId };
 }
 export async function GET(request: Request) {
@@ -38,7 +39,7 @@ export async function PUT(request: Request) {
     const { auth, messageId } = context;
     if (!originValid(request)) return jsonError("invalid_origin", "The request origin is invalid.", requestId, 403);
     if (!request.headers.get("content-type")?.includes("application/json")) return jsonError("invalid_content_type", "Expected JSON.", requestId, 415);
-    const body = await request.json().catch(() => null) as { minutes?: unknown } | null;
+    const body = await readJsonBody(request, 32_768) as { minutes?: unknown } | null;
     if (!Number.isInteger(body?.minutes) || (body!.minutes as number) < 1 || (body!.minutes as number) > 60000) return jsonError("invalid_estimate", "Enter between 1 and 60,000 minutes.", requestId, 400);
     const message = await supabaseRest<{ id: string; conversation_id: string }[]>(`chat_messages?id=eq.${encodeURIComponent(messageId)}&user_id=eq.${encodeURIComponent(auth.user.id)}&role=eq.assistant&status=eq.completed&select=id,conversation_id&limit=1`, auth.accessToken);
     if (message.error) return jsonError("estimate_unavailable", "The response could not be checked.", requestId, 503);
