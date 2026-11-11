@@ -56,3 +56,22 @@ test("keeps separate company searches for a pricing comparison", async () => {
   assert.deepEqual(mock.queries.map((query) => query.query), ["anthropic official pricing", "xai official pricing"]);
   assert.equal(mock.crawls[0].startUrls.length, 2);
 });
+
+test("routes a named competitive comparison even without a pricing keyword", async () => {
+  const mock = setup((query) => query.toLowerCase().startsWith("anthropic") ? [{ url: "https://anthropic.com/" }] : [{ url: "https://openai.com/" }]);
+  const prompt = "Compare Anthropic and OpenAI from a competitive standpoint";
+  assert.equal(mock.api.selectApifyTask(prompt), "competitor_site");
+  assert.equal(mock.api.selectApifyTask("Compare Anthropic and OpenAI"), "competitor_site");
+  await mock.run(prompt);
+  assert.deepEqual(mock.queries.map((query) => query.query), ["Anthropic official website", "OpenAI official website"]);
+  assert.equal(mock.crawls[0].startUrls.length, 2);
+});
+
+test("researches the named company's website for a positioning question", async () => {
+  const mock = setup(() => [{ url: "https://www.nvidia.com/" }]);
+  const prompt = `What is nvidia's main "thing" on their website now that would stand out to a consumer landing there right now and what does this tell you about their current positioning?`;
+  assert.equal(mock.api.selectApifyTask(prompt), "competitor_site");
+  await mock.run(prompt);
+  assert.equal(mock.queries[0].query, "nvidia official website");
+  assert.equal(mock.crawls[0].startUrls[0].url, "https://www.nvidia.com/");
+});

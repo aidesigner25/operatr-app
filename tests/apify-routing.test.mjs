@@ -90,6 +90,18 @@ test("uses both explicit LinkedIn and contextual company targets for follow-ups"
   assert.equal(started().input.targets[0], "Apple");
 });
 
+test("routes nuanced LinkedIn follow-ups to the named company", async () => {
+  const { api, started } = runtime();
+  const prompt = "did nvidia post anything about this on linkedin?";
+  const resolved = api.resolveApifyPrompt(prompt, ["Tell me about the NVIDIA scandal"]);
+  assert.equal(api.selectApifyTask(resolved), "linkedin_company");
+  await api.runApifyTask({ task: "linkedin_company", prompt: resolved, credential: "test", signal: AbortSignal.timeout(5000) });
+  assert.equal(started().input.targets[0], "nvidia");
+  const instruction = api.apifyResearchInstruction("LinkedIn company posts scan", []);
+  assert.match(instruction, /not a complete history/);
+  assert.match(instruction, /explicit reference/);
+});
+
 test("a same-report follow-up targets the newly named company instead of the previous one", async () => {
   const { api, started } = runtime();
   const prompt = "Excellent, could you please make me a doc conducting the same report, with the same linkedin scan, outlook, and key investment factors, but for costco?";
