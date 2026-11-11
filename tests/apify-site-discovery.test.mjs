@@ -75,3 +75,13 @@ test("researches the named company's website for a positioning question", async 
   assert.equal(mock.queries[0].query, "nvidia official website");
   assert.equal(mock.crawls[0].startUrls[0].url, "https://www.nvidia.com/");
 });
+
+test("finds the named company's charging page from a natural website request", async () => {
+  const mock = setup(() => [{ url: "https://www.rivian.com/charging" }]);
+  const prompt = "Can you tell me about what rivian says about charging on their website?";
+  assert.equal(mock.api.selectApifyTask(prompt), "competitor_site");
+  await mock.run(prompt);
+  assert.equal(mock.queries[0].query, "rivian official charging");
+  assert.equal(mock.crawls[0].startUrls[0].url, "https://www.rivian.com/charging");
+  assert.equal(mock.crawls[0].maxCrawlDepth, 0);
+});

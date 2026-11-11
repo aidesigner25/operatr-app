@@ -102,6 +102,28 @@ test("routes nuanced LinkedIn follow-ups to the named company", async () => {
   assert.match(instruction, /explicit reference/);
 });
 
+test("LinkedIn posting questions exclude the auxiliary verb from the company target", async () => {
+  const { api, started } = runtime();
+  for (const prompt of [
+    "What has rivian been posting about on linkedin recently and does this signal anything to you about their current marketing strategy and positioning?",
+    "Has Rivian been posting on LinkedIn?",
+  ]) {
+    assert.equal(api.selectApifyTask(prompt), "linkedin_company");
+    await api.runApifyTask({ task: "linkedin_company", prompt, credential: "test", signal: AbortSignal.timeout(5000) });
+    assert.equal(started().input.targets[0].toLowerCase(), "rivian");
+  }
+});
+
+test("research instructions request concise source links and evidence-based structure", () => {
+  const { api } = runtime();
+  for (const label of ["Reddit buyer signal scan", "competitor site crawl", "LinkedIn company posts scan"]) {
+    const instruction = api.apifyResearchInstruction(label, [{ title: "Post", url: "https://example.com/post", content: "Evidence" }]);
+    assert.match(instruction, /short Markdown label/);
+    assert.match(instruction, /Markdown comparison table/);
+    assert.match(instruction, /without inventing missing evidence/);
+  }
+});
+
 test("a same-report follow-up targets the newly named company instead of the previous one", async () => {
   const { api, started } = runtime();
   const prompt = "Excellent, could you please make me a doc conducting the same report, with the same linkedin scan, outlook, and key investment factors, but for costco?";
