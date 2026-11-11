@@ -9,6 +9,11 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   outputFileTracingRoot: __dirname,
+  // PDF.js is imported inside an evaluated worker, so automatic tracing cannot
+  // see these files. Include both the parser and its own worker in deployment.
+  outputFileTracingIncludes: {
+    "/api/chat/attachments/pdf": ["./node_modules/pdfjs-dist/package.json", "./node_modules/pdfjs-dist/legacy/build/pdf.mjs", "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"],
+  },
   async headers() {
     return [{
       source: "/:path*",
